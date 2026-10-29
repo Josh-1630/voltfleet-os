@@ -358,7 +358,7 @@
     const { d, v } = ctx();
     const b = VF.book(d.id, opt, source);
     VF.save();
-    VF.toast(`Slot held at ${opt.station.name} from ${VF.fmtTime(b.start)} · code ${b.code}`);
+    VF.toast(`Slot held at ${opt.station.name} (${VF.operator(opt.station.operatorId).name}) from ${VF.fmtTime(b.start)} · code ${b.code}`);
     return b;
   }
   Object.assign(VF.ACT, {

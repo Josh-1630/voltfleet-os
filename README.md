@@ -24,6 +24,10 @@ One platform that connects **EV drivers**, **their vehicles** (any make) and **c
 
 All data is simulated so the product can be demonstrated end to end: 10 stations, 2 operators, 29 drivers, 14 vehicle models, and a demo clock running at 20× speed (adjustable under Admin → System). Everything is stored in the browser. The vehicle make data coverage shown is *expected* and must be confirmed for each integration.
 
+## Shared demo state
+
+All roles share one simulated world per browser. Open several tabs, for example the driver app in one and the operator console in another: one tab runs the simulation and saves every second, and the others pick up each change within about a second. Who is signed in is per tab. Different browsers or devices each have their own separate world until a backend is added (step 1 below).
+
 ## Run locally
 
 ```

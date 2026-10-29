@@ -5,7 +5,7 @@
 (function () {
   const { esc, clamp, sum, fmt, icon, pill } = VF;
   const MIN = VF.MIN, HOUR = VF.HOUR, DAY = VF.DAY;
-  const ui = VF.ui.operator = { station: null, bookTab: 'upcoming', logStation: 'all', repDays: 30 };
+  const ui = VF.ui.operator = { station: null, bookTab: 'upcoming', logStation: 'all', repDays: 30, seen: null, seenOp: null };
 
   const me = () => VF.user(VF.session.userId);
   const opId = () => me().operatorId;
@@ -46,6 +46,7 @@
         <div class="small num muted"><span data-live="${c.id}-soc">${sessionSoc(c)}</span> · <span data-live="${c.id}-kw">${fmt.kw(se.kw)}</span>${se.limited ? ' <span class="pill warn plain">limited</span>' : ''} · <span data-live="${c.id}-kwh">${fmt.kwh(se.kwh)}</span> · <span data-live="${c.id}-el">${elapsed(se)}</span></div>`;
     } else if (c.status === 'Faulted') detail = `<div class="small bad-text">${esc(c.error || 'Fault')}</div>`;
     else if (res) detail = `<div class="small">Held for <span class="mono">${esc(res.code)}</span> · ${esc(res.model)} · arrives ${bookingEta(res)}</div>`;
+    else if (nb && nb.start - VF.now() < 60 * MIN) detail = `<div class="small"><span class="pill accent plain">Booked</span> <span class="mono">${esc(nb.code)}</span> · ${esc(nb.model)} · slot ${VF.fmtTime(nb.start)}, held from ${VF.fmtTime(nb.start - 15 * MIN)}</div>`;
     else if (nb) detail = `<div class="small muted">Next booking ${VF.fmtTime(nb.start)} · ${esc(nb.model)}</div>`;
     else detail = `<div class="small faint">${c.status === 'Finishing' ? 'Vehicle unplugging' : 'No booking in the next hours'}</div>`;
     return `<div class="conn-row"><div class="conn-id"><strong>${esc(c.label)}</strong><span class="faint small">${esc(c.type)} · ${c.kw} kW</span></div><div class="conn-status">${VF.connPill(c)}</div><div class="conn-detail">${detail}</div><div class="conn-act">${actions(c)}</div></div>`;
@@ -66,7 +67,7 @@
     return [
       VF.kpi('Available', n('Available'), `/ ${conns.length}`, 'connectors'),
       VF.kpi('Charging now', n('Charging'), '', `${fmt.n(sum(sts, stationLoad))} kW total`),
-      VF.kpi('Reserved', n('Reserved'), '', `${upcoming(4).length} bookings next 4 h`),
+      VF.kpi('Upcoming bookings', VF.state.bookings.filter((b) => mine(b.stationId) && b.status === 'confirmed').length, '', `${n('Reserved')} connector${n('Reserved') === 1 ? '' : 's'} held now`),
       VF.kpi('Faulted', n('Faulted') + n('Unavailable'), '', n('Faulted') ? 'needs attention' : 'all healthy', n('Faulted') ? 'bad' : 'good'),
       VF.kpi('Energy today', fmt.n(t.kwh), 'kWh', `${t.sessions} sessions`),
       VF.kpi('Revenue today', fmt.money(t.revenue, 0), '', 'incl. live sessions'),
@@ -267,6 +268,13 @@
     pages: { 'op-live': pageLive, 'op-stations': pageStations, 'op-bookings': pageBookings, 'op-pricing': pagePricing, 'op-reports': pageReports, 'op-alerts': pageAlerts },
     charts: { 'op-timeline': drawTimeline, 'op-energy': drawReports, 'op-booked': drawReports },
     structKey, live,
+    // Called every second: tell the operator about bookings made in the driver app since they last looked.
+    poll() {
+      const mineNew = VF.state.alerts.filter((a) => a.scope === opId() && a.kind === 'New booking');
+      if (!ui.seen || ui.seenOp !== opId()) { ui.seen = new Set(mineNew.map((a) => a.id)); ui.seenOp = opId(); return; }
+      for (const a of mineNew) if (!ui.seen.has(a.id)) { ui.seen.add(a.id); VF.toast(a.title); }
+    },
+    leave() {},
   };
 
   // ---------------------------------------------------------------- actions

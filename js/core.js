@@ -578,6 +578,9 @@ window.VF = (function () {
     const trip = Object.assign(makeTrip(nodes, [pos.lat, pos.lon]), { origin: v.trip ? v.trip.origin : here, dest, bookingId: b.id });
     trip.stopKm = trip.segKm[0] + shortestPath(here, opt.station.node).km;
     v.trip = trip; if (v.status === 'parked') v.status = 'driving';
+    raiseAlert({ scope: opt.station.operatorId, stationId: opt.station.id, sev: 'info', kind: 'New booking', bookingId: b.id,
+      title: `New booking ${b.code} at ${opt.station.name}`,
+      body: `${v.model} · connector ${opt.c.label} (${opt.c.type}) · slot ${VF.fmtTime(b.start)}–${VF.fmtTime(b.end)} · ${VF.pseudo(driverId, opt.station.operatorId)}. Booked ${source === 'auto' ? 'with one tap' : 'manually'} in the driver app.` });
     ocpp(opt.station.id, opt.c.id, '→', 'Slot held', `${b.code} · ${VF.fmtTime(b.start)}–${VF.fmtTime(b.end)} (ReserveNow sent 15 min before arrival)`);
     notify(driverId, `Booked: ${opt.station.name}`, `Connector ${opt.c.label} (${opt.c.type}, ${opt.c.kw} kW) is held for you from ${VF.fmtTime(b.start)}. Code ${b.code}.`);
     return b;
@@ -628,7 +631,8 @@ window.VF = (function () {
   VF.startTrip = startTrip;
 
   // ------------------------------------------------------------------ live simulation
-  VF.loadSamples = {};
+  // Site load history lives in the shared state so every open tab sees the same sparkline.
+  Object.defineProperty(VF, 'loadSamples', { get: () => (VF.state.loadSamples = VF.state.loadSamples || {}) });
   const taper = (soc, dc) => (!dc ? (soc < 95 ? 1 : 0.3) : soc < 55 ? 1 : soc < 80 ? 1 - (soc - 55) / 25 * 0.45 : 0.35);
   function allocate(st) {
     const active = st.connectors.filter((c) => c.status === 'Charging' && c.session);
@@ -798,20 +802,39 @@ window.VF = (function () {
     return { sessions: done.length + live.length, kwh: sum(done, (x) => x.kwh) + sum(live, (x) => x.kwh), revenue: sum(done, (x) => x.cost) + sum(live, (x) => x.cost), live: live.length };
   };
 
-  // ------------------------------------------------------------------ persistence
-  const STORE_KEY = 'voltfleet-os:v2';
+  // ------------------------------------------------------------------ persistence & cross-tab sync
+  // One shared world per browser: every tab reads and writes the same state, tagged with a revision.
+  // Who is signed in is per tab (sessionStorage), so a driver tab and an operator tab can sit side by side.
+  const STORE_KEY = 'voltfleet-os:v2', REV_KEY = 'voltfleet-os:rev', SESSION_KEY = 'voltfleet-os:session';
+  VF.STORE_KEY = STORE_KEY;
   VF.storageOk = true;
   VF.save = function () {
-    try { localStorage.setItem(STORE_KEY, JSON.stringify({ state: VF.state, session: VF.session || null })); VF.storageOk = true; } catch (e) { VF.storageOk = false; }
+    try {
+      const stored = Number(localStorage.getItem(REV_KEY)) || 0;
+      VF.state.rev = Math.max(VF.state.rev || 0, stored) + 1;
+      localStorage.setItem(STORE_KEY, JSON.stringify({ state: VF.state }));
+      localStorage.setItem(REV_KEY, String(VF.state.rev));
+      VF.storageOk = true;
+    } catch (e) { VF.storageOk = false; }
+    try { sessionStorage.setItem(SESSION_KEY, JSON.stringify(VF.session || null)); } catch (e) { /* per-tab sign-in not kept */ }
   };
   VF.load = function () {
+    try { VF.session = JSON.parse(sessionStorage.getItem(SESSION_KEY)); } catch (e) { VF.session = null; }
     try {
       const raw = JSON.parse(localStorage.getItem(STORE_KEY));
-      if (raw && raw.state && raw.state.version === 2) { VF.state = raw.state; VF.session = raw.session; return true; }
+      if (raw && raw.state && raw.state.version === 2) { VF.state = raw.state; return true; }
     } catch (e) { /* storage unavailable */ }
     return false;
   };
-  VF.reset = function () { VF.loadSamples = {}; histCache = null; seed(); };
+  // Take a newer state written by another tab. Returns true if anything changed.
+  VF.adopt = function (json) {
+    try {
+      const raw = JSON.parse(json);
+      if (raw && raw.state && raw.state.version === 2 && (raw.state.rev || 0) > (VF.state.rev || 0)) { VF.state = raw.state; histCache = null; return true; }
+    } catch (e) { /* ignore a half-written value */ }
+    return false;
+  };
+  VF.reset = function () { histCache = null; seed(); };
 
   // ------------------------------------------------------------------ UI building blocks
   const I = {

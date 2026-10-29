@@ -12,30 +12,113 @@
   VF.route = () => (location.hash || '').slice(1);
 
   // ---------------------------------------------------------------- sign-in
+  const ROLES = [
+    ['driver', 'Driver', 'car'], ['operator', 'Operator', 'plug'], ['admin', 'Admin', 'shield'], ['developer', 'Developer', 'code'],
+  ];
+  const loginUi = VF.ui.login = { role: 'driver', error: '' };
+  function demoAccounts(role) {
+    const s = VF.state;
+    return s.users.filter((u) => u.role === role && (u.demo || role !== 'driver')).map((u) => {
+      let line = '', meta = '';
+      if (role === 'driver') { const v = VF.driverVehicle(u.driverId); line = v.model; meta = u.deleted ? 'Deleted' : v.trip && !v.trip.done ? `${Math.round(v.soc)}% · driving to ${VF.PLACES[v.trip.dest].name}` : `${Math.round(v.soc)}% · parked`; }
+      if (role === 'operator') { line = VF.operator(u.operatorId).name; meta = s.stations.filter((x) => x.operatorId === u.operatorId).map((x) => x.name.split(' ')[0]).join(', '); }
+      if (role === 'admin') { line = 'VoltFleet platform'; meta = 'Every operator, station and driver'; }
+      if (role === 'developer') { const o = s.connect.orgs.find((x) => x.id === u.orgId); line = o.name; meta = 'VoltFleet Connect API'; }
+      return { u, line, meta };
+    });
+  }
   function renderSignin() {
     current = null;
     document.title = 'Sign in · VoltFleet OS';
-    const s = VF.state;
-    const card = (u, line, meta) => `<button type="button" class="acct" data-act="signin" data-id="${u.id}" ${u.deleted ? 'disabled' : ''}>
-        <span class="avatar">${esc(u.deleted ? '—' : u.name.split(' ').map((p) => p[0]).join(''))}</span><span class="grow"><strong>${esc(u.deleted ? 'Deleted account' : u.name)}</strong><span class="small muted">${esc(line)}</span>${meta ? `<span class="small faint">${esc(meta)}</span>` : ''}</span>${icon('route')}</button>`;
-    const drivers = s.users.filter((u) => u.role === 'driver' && u.demo).map((u) => {
-      const v = VF.driverVehicle(u.driverId); const m = VF.model(v);
-      return card(u, `${v.model} · ${m.oem}${m.spec !== 'International' ? ' · ' + m.spec : ''}`, v.trip && !v.trip.done ? `${Math.round(v.soc)}% · driving to ${VF.PLACES[v.trip.dest].name}` : `${Math.round(v.soc)}% · parked`);
-    }).join('');
-    const ops = s.users.filter((u) => u.role === 'operator').map((u) => card(u, VF.operator(u.operatorId).name, `${s.stations.filter((x) => x.operatorId === u.operatorId).length} stations`)).join('');
-    const admin = s.users.filter((u) => u.role === 'admin').map((u) => card(u, 'VoltFleet platform', 'Every operator, station and driver')).join('');
-    const devs = s.users.filter((u) => u.role === 'developer').map((u) => card(u, s.connect.orgs.find((o) => o.id === u.orgId).name, 'Builds on the VoltFleet Connect API')).join('');
-    $('#root').innerHTML = `<div class="signin">
-      <div class="signin-head"><span class="brand">${brandMark()}<span class="brand-name">VoltFleet<span>OS</span></span></span><span class="demo-badge">Demo</span></div>
-      <div class="signin-hero"><h1>One platform between EV drivers, their cars and the chargers they need.</h1><p class="muted">Pick an account to see that role's app. Each role sees different data: drivers see their own car, operators see their own stations, developers see only the vehicles drivers chose to share through VoltFleet Connect, and the platform admin sees everything with personal data masked.</p></div>
-      <div class="signin-grid">
-        <section class="role-col"><div class="role-head">${icon('car')}<div><h2>Driver app</h2><p class="small muted">Battery, range, time left, chargers on the route and one-tap booking.</p></div></div>${drivers}</section>
-        <section class="role-col"><div class="role-head">${icon('plug')}<div><h2>Charge point operator</h2><p class="small muted">Live stations, bookings, smart charging and OCPP control.</p></div></div>${ops}</section>
-        <section class="role-col"><div class="role-head">${icon('shield')}<div><h2>Super admin</h2><p class="small muted">The whole network, vehicle integrations, users and privacy.</p></div></div>${admin}</section>
-        <section class="role-col"><div class="role-head">${icon('code')}<div><h2>Developer</h2><p class="small muted">VoltFleet Connect: one API for any EV make, with driver consent built in.</p></div></div>${devs}</section>
-      </div>
-      <p class="faint small signin-foot">${icon('lock')} Demo sign-in has no passwords. Production uses phone or email verification for drivers and SSO with multi-factor sign-in for operators and admins. All demo data is simulated and stays in this browser.</p>
+    const s = VF.state; const role = loginUi.role;
+    const accts = demoAccounts(role);
+    const first = accts.find((a) => !a.u.deleted);
+    const conns = s.stations.reduce((n, st) => n + st.connectors.length, 0);
+    const makes = new Set(Object.values(VF.MODELS).map((m) => m.oem)).size;
+    $('#root').innerHTML = `<div class="auth">
+      <section class="auth-art" aria-hidden="false">
+        <canvas id="auth-canvas" aria-hidden="true"></canvas>
+        <div class="auth-art-inner">
+          <span class="brand on-dark">${brandMark()}<span class="brand-name">VoltFleet<span>OS</span></span></span>
+          <div class="auth-copy">
+            <h1>Every EV. Every charger.<br>One platform.</h1>
+            <p>Live battery data from any make, one-tap charger booking with no queue, and tools for charging networks, with privacy built in from the start.</p>
+          </div>
+          <dl class="auth-stats">
+            <div><dt>${s.stations.length}</dt><dd>stations live in Accra</dd></div>
+            <div><dt>${conns}</dt><dd>connectors, OCPP-ready</dd></div>
+            <div><dt>${makes}</dt><dd>vehicle makes supported</dd></div>
+          </dl>
+        </div>
+      </section>
+      <section class="auth-panel">
+        <div class="auth-card">
+          <div class="auth-head"><h2>Sign in</h2><p class="muted">Choose how you use VoltFleet.</p></div>
+          <div class="role-tabs" role="tablist" aria-label="Account type">${ROLES.map(([k, l, ic]) => `<button type="button" role="tab" aria-selected="${role === k}" data-act="login-role" data-role="${k}">${icon(ic)}<span>${l}</span></button>`).join('')}</div>
+          <form id="login-form" class="auth-form" novalidate>
+            <label class="field"><span>Email</span><input class="input lg" id="login-email" type="email" autocomplete="username" value="${esc(first ? first.u.email : '')}" required></label>
+            <label class="field"><span class="row between"><span>Password</span><span class="faint small">Any password works in the demo</span></span><input class="input lg" id="login-pass" type="password" autocomplete="current-password" value="demo-password" required></label>
+            <div class="form-error" id="login-error" ${loginUi.error ? '' : 'hidden'}>${icon('warn')}<span>${esc(loginUi.error)}</span></div>
+            <button class="btn primary big" type="submit">Sign in</button>
+          </form>
+          <div class="divider"><span>or pick a demo account</span></div>
+          <div class="demo-list">${accts.map((a) => `<button type="button" class="demo-acct" data-act="signin" data-id="${a.u.id}" ${a.u.deleted ? 'disabled' : ''}>
+            <span class="avatar sm">${esc(a.u.deleted ? '—' : a.u.name.split(' ').map((p) => p[0]).join(''))}</span>
+            <span class="grow"><strong>${esc(a.u.deleted ? 'Deleted account' : a.u.name)}</strong><span class="small muted">${esc(a.line)}${a.meta ? ' · ' + esc(a.meta) : ''}</span></span>
+            <span class="go">${icon('route')}</span></button>`).join('')}</div>
+          <p class="auth-foot faint small">${icon('lock')}<span>Demo sign-in. In production drivers verify by phone or email, and operators and admins use single sign-on with a second factor. All data here is simulated and stays in this browser.</span></p>
+        </div>
+      </section>
     </div>`;
+    startAuthArt();
+  }
+  function signInByEmail() {
+    const email = ($('#login-email').value || '').trim().toLowerCase();
+    const pass = $('#login-pass').value || '';
+    const u = VF.state.users.find((x) => (x.email || '').toLowerCase() === email && !x.deleted);
+    loginUi.error = !email || !pass ? 'Enter your email and password.' : !u ? 'No account uses that email. Pick a demo account below.' : '';
+    if (loginUi.error) { const el = $('#login-error'); el.hidden = false; el.lastElementChild.textContent = loginUi.error; return; }
+    signIn(u.id);
+  }
+  // Animated network behind the sign-in copy: Accra's roads, live stations and cars moving between them.
+  let artRaf = null;
+  function startAuthArt() {
+    cancelAnimationFrame(artRaf);
+    const cv = $('#auth-canvas'); if (!cv) return;
+    const ctx = cv.getContext('2d');
+    const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const edges = VF.ROADS.map(([a, b, major]) => ({ a: VF.proj(VF.PLACES[a].lat, VF.PLACES[a].lon), b: VF.proj(VF.PLACES[b].lat, VF.PLACES[b].lon), major }));
+    const cars = Array.from({ length: 26 }, () => ({ e: Math.floor(Math.random() * edges.length), t: Math.random(), v: 0.0015 + Math.random() * 0.003, dir: Math.random() < 0.5 ? 1 : -1 }));
+    function frame() {
+      if (!cv.isConnected) return;
+      const w = cv.clientWidth, h = cv.clientHeight, dpr = Math.min(2, window.devicePixelRatio || 1);
+      if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, w, h);
+      const k = Math.max(w / VF.MAP.W, h / VF.MAP.H) * 1.08, ox = (w - VF.MAP.W * k) / 2, oy = (h - VF.MAP.H * k) / 2 + h * 0.04;
+      const P = (p) => [ox + p[0] * k, oy + p[1] * k];
+      ctx.lineCap = 'round';
+      for (const e of edges) { const [x1, y1] = P(e.a), [x2, y2] = P(e.b); ctx.strokeStyle = e.major ? 'rgba(140,165,255,.26)' : 'rgba(140,165,255,.13)'; ctx.lineWidth = e.major ? 2.2 : 1.3; ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); }
+      const time = performance.now() / 1000;
+      for (const st of VF.state.stations) {
+        const [x, y] = P(VF.proj(VF.PLACES[st.node].lat, VF.PLACES[st.node].lon));
+        const free = st.connectors.some((c) => c.status === 'Available');
+        const pulse = reduce ? 0.5 : (Math.sin(time * 2 + x) + 1) / 2;
+        ctx.fillStyle = free ? `rgba(63,208,186,${0.12 + pulse * 0.12})` : `rgba(242,182,83,${0.12 + pulse * 0.12})`;
+        ctx.beginPath(); ctx.arc(x, y, 10 + pulse * 6, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = free ? '#3FD0BA' : '#F2B653'; ctx.beginPath(); ctx.arc(x, y, 3.6, 0, Math.PI * 2); ctx.fill();
+      }
+      for (const c of cars) {
+        if (!reduce) { c.t += c.v * c.dir; if (c.t > 1 || c.t < 0) { c.e = Math.floor(Math.random() * edges.length); c.t = c.dir > 0 ? 0 : 1; } }
+        const e = edges[c.e]; const [x1, y1] = P(e.a), [x2, y2] = P(e.b);
+        const x = x1 + (x2 - x1) * c.t, y = y1 + (y2 - y1) * c.t;
+        const tx = x - (x2 - x1) * 0.06 * c.dir, ty = y - (y2 - y1) * 0.06 * c.dir;
+        const g = ctx.createLinearGradient(tx, ty, x, y); g.addColorStop(0, 'rgba(125,152,255,0)'); g.addColorStop(1, 'rgba(160,182,255,.9)');
+        ctx.strokeStyle = g; ctx.lineWidth = 2.4; ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(x, y); ctx.stroke();
+        ctx.fillStyle = '#C9D5FF'; ctx.beginPath(); ctx.arc(x, y, 2, 0, Math.PI * 2); ctx.fill();
+      }
+      if (!reduce) artRaf = requestAnimationFrame(frame);
+    }
+    frame();
   }
   const brandMark = () => '<svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><rect x="1" y="1" width="30" height="30" rx="8" fill="currentColor"/><path d="M18.5 5 9 18h6.2l-1.7 9L23 14h-6.3z" fill="var(--bg)"/></svg>';
   const clockText = () => `${VF.fmtDayTime(VF.now())} ${VF.tzLabel()}`;
@@ -147,17 +230,45 @@
 
   Object.assign(VF.ACT, {
     signin: (el) => signIn(el.dataset.id),
+    'login-role': (el) => { loginUi.role = el.dataset.role; loginUi.error = ''; renderSignin(); },
     signout: () => VF.signOut(),
   });
 
   // ---------------------------------------------------------------- live loop
+  // Several tabs can be open at once (say, a driver and an operator side by side). One visible tab leads:
+  // it runs the simulation and saves every second; the others adopt each save as it lands.
+  const TAB_ID = Math.random().toString(36).slice(2);
+  const LEADER_KEY = 'voltfleet-os:leader';
+  function leads() {
+    try {
+      const l = JSON.parse(localStorage.getItem(LEADER_KEY) || 'null'); const now = Date.now();
+      if (!l || l.id === TAB_ID || now - l.t > 3500) { localStorage.setItem(LEADER_KEY, JSON.stringify({ id: TAB_ID, t: now })); return true; }
+      return false;
+    } catch (e) { return true; }
+  }
+  function onStorage(e) {
+    if (e.key !== VF.STORE_KEY || !e.newValue) return;
+    if (!VF.adopt(e.newValue)) return;
+    if (!role()) { if (!current && $('.auth')) return; }
+    refreshUi();
+  }
+  function refreshUi() {
+    if (!current) return;
+    if (!role()) { VF.signOut('Your account is no longer available.'); return; }
+    const app = appFor(current.role);
+    const ae = document.activeElement;
+    const editing = ae && $('#view') && $('#view').contains(ae) && /^(INPUT|SELECT|TEXTAREA)$/.test(ae.tagName);
+    const key = app.structKey ? app.structKey(current.page) : current.page;
+    if (key !== lastKey && !editing) renderPage(true);
+    else if (app.live) { const vals = app.live(current.page); if (vals) applyLive(vals); }
+  }
   function tick() {
     if (document.hidden) return;
-    if (VF.tick(1000)) (VF.tickHooks || []).forEach((f) => f());
+    if (leads()) { if (VF.tick(1000)) (VF.tickHooks || []).forEach((f) => f()); VF.save(); }
     tickN++;
-    if (tickN % 5 === 0) VF.save();
     if (!current) return;
     const app = appFor(current.role);
+    if (app.poll) app.poll();
     applyLive({ clock: clockText(), speed: speedText() });
     renderNav();
     if (app.tools) VF.setHTML($('#tools'), app.tools());
@@ -187,6 +298,9 @@
       if (g && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); VF.ACT[g.dataset.act](g, e); }
     });
     window.addEventListener('hashchange', routeChange);
+    window.addEventListener('storage', onStorage);
+    window.addEventListener('pagehide', () => { try { const l = JSON.parse(localStorage.getItem(LEADER_KEY) || 'null'); if (l && l.id === TAB_ID) localStorage.removeItem(LEADER_KEY); } catch (e) { /* ignore */ } });
+    document.addEventListener('submit', (e) => { if (e.target.id === 'login-form') { e.preventDefault(); signInByEmail(); } });
     window.addEventListener('resize', VF.debounce(drawCharts, 150));
     routeChange();
     setInterval(tick, 1000);
