@@ -320,6 +320,7 @@ window.VF = (function () {
       if (!m) continue;
       startSession(station, c, { model: m, soc: 15 + r() * 40, target: 80, driverId: r() < 0.5 ? pick(drivers.filter((d) => d.sim), r).id : null }, now - Math.floor(r() * 40) * MIN, true);
       c.session.kwh = r() * 20;
+      ocpp(station.id, c.id, '←', 'StartTransaction', `walk-in · ${MODELS[m].oem}`, c.session.start);
     }
     // Upcoming bookings from other app users
     for (let i = 0; i < 12; i++) createSimBooking(now + (20 + r() * 260) * MIN, r);
@@ -347,6 +348,7 @@ window.VF = (function () {
     audit('u-op1', 'remote-command', 'st-osu-2 Reset', null, now - 7 * HOUR);
     audit('u-admin', 'export', 'Network sessions CSV (pseudonymous)', null, now - 3 * DAY);
     ocpp('st-kan', 'st-kan-2', '←', 'StatusNotification', 'Faulted · GroundFailure', now - 72 * MIN);
+    s.ocpp.sort((a, b) => b.t - a.t);
     return s;
   }
   VF.seed = seed;

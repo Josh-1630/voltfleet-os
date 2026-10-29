@@ -1,4 +1,4 @@
-/* VoltFleet OS — driver app (mobile-first).
+/* VoltFleet OS — driver app (responsive dashboard; bottom tabs on phones).
    A driver only ever sees their own vehicle, trips, bookings and data. */
 'use strict';
 (function () {
@@ -59,7 +59,7 @@
   }
   function mapHTML(v, m, id) {
     const mi = mapInfo(v, m);
-    return VF.mapSVG({ id, vb: VF.fitBox(mi.fit, 70, 1.3), route: mi.active ? v.trip.pts : null, routeDone: mi.active ? donePts(v.trip) : null, stations: mi.stations, vehicle: { lat: mi.pos.lat, lon: mi.pos.lon, cls: v.status }, stationAct: 'd-station', label: 'Your route and chargers' });
+    return VF.mapSVG({ id, vb: VF.fitBox(mi.fit, 60, 1.55), route: mi.active ? v.trip.pts : null, routeDone: mi.active ? donePts(v.trip) : null, stations: mi.stations, vehicle: { lat: mi.pos.lat, lon: mi.pos.lon, cls: v.status }, stationAct: 'd-station', label: 'Your route and chargers' });
   }
   function mapLegend() {
     return `<div class="legend small"><span><i class="lg avail"></i>Free now</span><span><i class="lg busy"></i>Busy</span><span><i class="lg booked"></i>Your booking</span><span><i class="lg incompat"></i>Not compatible</span></div>`;
@@ -86,101 +86,128 @@
   }
 
   // ---------------------------------------------------------------- shared cards
-  function bookingCard(b, v, m) {
-    const st = VF.station(b.stationId); const c = VF.connector(b.connectorId); const op = VF.operator(b.operatorId);
-    if (b.status === 'charging') {
-      return `<section class="d-card charging-card">
-        <div class="row between"><div><div class="eyebrow">Charging · ${esc(st.name)}</div><h3>Connector ${esc(c.label)} · ${esc(c.type)}</h3></div>${pill('charge', 'Charging')}</div>
-        <div class="trip-bar"><i class="charge" data-live="chgw" style="width:${clamp(v.soc, 0, 100)}%"></i><b style="left:${b.targetSoc}%"></b></div>
-        <div class="stat-row">
-          <div><span class="num" data-live="chgkw">—</span><small>power now</small></div>
-          <div><span class="num" data-live="chgkwh">—</span><small>added</small></div>
-          <div><span class="num" data-live="chgcost">—</span><small>cost so far</small></div>
-          <div><span class="num" data-live="chgleft">—</span><small>to ${b.targetSoc}%</small></div>
-        </div>
-        <div class="row"><button class="btn" data-act="d-stop">Stop charging</button><span class="faint small">Booking ${esc(b.code)} · ${esc(op.name)}</span></div>
-      </section>`;
+  const card = (cls, title, action, body) => `<section class="card ${cls}">${title ? `<div class="card-head"><h3>${title}</h3>${action || ''}</div>` : ''}${body}</section>`;
+  const stat = (label, value, live) => `<div class="stat"><span class="stat-label">${label}</span><span class="stat-value"${live ? ` data-live="${live}"` : ''}>${value}</span></div>`;
+  const mapsLink = (st) => `https://www.google.com/maps/search/?api=1&query=${VF.PLACES[st.node].lat},${VF.PLACES[st.node].lon}`;
+
+  // The charging card changes with the driver's situation: booked, charging, needs a charge, or fine.
+  function chargeCard(v, m, t, span) {
+    const d = VF.driver(v.driverId); const b = VF.activeBooking(d.id); const reserve = VF.state.settings.reserve;
+    if (b && b.status === 'charging') {
+      const st = VF.station(b.stationId); const c = VF.connector(b.connectorId);
+      return card(`${span} charge-card is-charging`, 'Charging now', VF.pill('charge', 'Live'), `
+        <div class="charge-place"><strong>${esc(st.name)}</strong><span class="muted small">Connector ${esc(c.label)} · ${esc(c.type)} ${c.kw} kW</span></div>
+        <div class="progress lg"><i class="charge" data-live="chgw" style="width:${clamp(v.soc, 0, 100)}%"></i><b style="left:${b.targetSoc}%" title="Target ${b.targetSoc}%"></b></div>
+        <div class="stats-4">${stat('Power', '—', 'chgkw')}${stat('Added', '—', 'chgkwh')}${stat('Cost so far', '—', 'chgcost')}${stat(`To ${b.targetSoc}%`, '—', 'chgleft')}</div>
+        <div class="card-actions"><button class="btn" data-act="d-stop">Stop charging</button><span class="faint small">Booking ${esc(b.code)}</span></div>`);
     }
-    const wait = c.status === 'Charging' && c.session && c.session.bookingId !== b.id;
-    return `<section class="d-card booking-card">
-      <div class="row between"><div><div class="eyebrow">Your charging slot</div><h3>${esc(st.name)}</h3><div class="muted small">${esc(op.name)} · connector ${esc(c.label)} · ${esc(c.type)} ${c.kw} kW</div></div><div class="code-box"><span class="faint">Code</span><strong>${esc(b.code)}</strong></div></div>
-      <div class="stat-row">
-        <div><span class="num">${VF.fmtTime(b.start)}</span><small>slot starts</small></div>
-        <div><span class="num" data-live="beta">${VF.fmtTime(b.eta)}</span><small>you arrive</small></div>
-        <div><span class="num" data-live="bsoc">${Math.round(b.arrivalSoc)}%</span><small>on arrival</small></div>
-        <div><span class="num">${fmt.money(b.estCost, 0)}</span><small>est. to ${b.targetSoc}%</small></div>
-      </div>
-      <div class="note ${wait ? 'warn' : 'good'}">${icon(wait ? 'clock' : 'check')}<span>${wait ? 'A walk-in session is finishing on your connector. You keep first place.' : `Held for you until ${VF.fmtTime(b.start + VF.operator(b.operatorId).pricing.graceMin * MIN)}. No queue when you arrive.`}</span></div>
-      <div class="row"><a class="btn" href="https://www.google.com/maps/search/?api=1&query=${VF.PLACES[st.node].lat},${VF.PLACES[st.node].lon}" target="_blank" rel="noopener">${icon('pin')}Open in Maps</a><button class="btn ghost danger" data-act="d-cancel" data-id="${b.id}">Cancel booking</button></div>
-    </section>`;
+    if (b) {
+      const st = VF.station(b.stationId); const c = VF.connector(b.connectorId); const op = VF.operator(b.operatorId);
+      const wait = c.status === 'Charging' && c.session && c.session.bookingId !== b.id;
+      return card(`${span} charge-card is-booked`, 'Your charging slot', `<span class="code-chip">${esc(b.code)}</span>`, `
+        <div class="charge-place"><strong>${esc(st.name)}</strong><span class="muted small">${esc(op.name)} · ${esc(c.label)} · ${esc(c.type)} ${c.kw} kW</span></div>
+        <div class="stats-3">${stat('Slot starts', VF.fmtTime(b.start))}${stat('You arrive', VF.fmtTime(b.eta), 'beta')}${stat('Est. cost', fmt.money(b.estCost, 0))}</div>
+        <div class="note ${wait ? 'warn' : 'good'}">${icon(wait ? 'clock' : 'check')}<span>${wait ? 'A walk-in is finishing on your connector. You keep first place.' : `Held for you until ${VF.fmtTime(b.start + op.pricing.graceMin * MIN)}. No queue.`}</span></div>
+        <div class="card-actions"><a class="btn" href="${mapsLink(st)}" target="_blank" rel="noopener">${icon('pin')}Directions</a><button class="btn ghost danger" data-act="d-cancel" data-id="${b.id}">Cancel</button></div>`);
+    }
+    if (v.status === 'stranded') return card(`${span} charge-card is-low`, 'Battery empty', '', `<p class="muted">Call roadside assistance. They get your booking history, but not your location unless you share it.</p>`);
+    if (t && t.arriveSoc < reserve) {
+      return card(`${span} charge-card is-low`, 'Charge needed', VF.pill('bad', 'Action'), `
+        <p>At this pace you'd reach <strong>${esc(t.dest)}</strong> with <strong data-live="arrsoc2">${Math.round(t.arriveSoc)}%</strong>, below your ${reserve}% reserve.</p>
+        <button class="btn primary big" data-act="d-auto">${icon('bolt')}Book a charger on my route</button>
+        <p class="faint small">Checks live availability of every connector that fits your car and holds a slot for your arrival.</p>`);
+    }
+    return card(`${span} charge-card is-ok`, 'Charging', VF.pill('ok', 'On track'), `
+      <p class="muted">${t ? `You'll reach ${esc(t.dest)} with about <strong data-live="arrsoc2">${Math.round(t.arriveSoc)}%</strong>. No stop needed.` : 'No charge needed right now.'}</p>
+      <button class="btn big" data-act="d-auto">${icon('bolt')}Book a charger on my route</button>`);
   }
   function autoResult() {
     const a = ui.auto; if (!a) return '';
     const s = a.stats;
-    return `<div class="check-summary">${icon('check')}<span>Checked ${s.connectors} connectors at ${s.stations} stations on your route: <strong>${s.free}</strong> free when you arrive, ${s.busy} busy, ${s.outOfService} out of service, ${s.incompatible} don't fit your ${esc(a.model)}.</span></div>`;
+    return `<div class="check-summary">${icon('check')}<span>Checked ${s.connectors} connectors at ${s.stations} stations: <strong>${s.free}</strong> free when you arrive, ${s.busy} busy, ${s.outOfService} out of service, ${s.incompatible} don't fit your ${esc(a.model)}.</span></div>`;
+  }
+  function optionRow(o, canBook, compact) {
+    return `<li class="opt"><div class="opt-main"><strong>${esc(o.station.name)}</strong>
+      <span class="muted small">${esc(o.c.type)} ${o.c.kw} kW · ${o.detour < 0.5 ? 'on route' : '+' + fmt.km(o.detour)} · arrive ${VF.fmtTime(o.eta)}</span>
+      <span class="opt-tags">${o.wait ? VF.pill('warn plain', `Wait ${o.wait} min`) : VF.pill('ok plain', 'Free on arrival')}${compact ? '' : `<span class="small muted">${fmt.dur(o.dur)} to ${Math.round(o.target)}% · ${fmt.money(o.cost, 0)}</span>`}</span></div>
+      <button class="btn small" data-act="d-book" data-st="${o.station.id}" data-c="${o.c.id}" ${canBook ? '' : 'disabled'}>Book</button></li>`;
+  }
+  function routeOptions(d) {
+    const ev = VF.evaluateRoute(d.id); const best = {};
+    for (const o of ev.options) if (!best[o.station.id]) best[o.station.id] = o;
+    return { ev, list: Object.values(best) };
   }
 
   // ---------------------------------------------------------------- pages
   function disconnected(d, v, m) {
-    return `<section class="d-card"><div class="empty-state">${icon('lock')}<h3>Vehicle data is switched off</h3><p class="muted">You turned off the connection to your ${esc(m.oem)}. Range, trip and charging features need battery data.</p><button class="btn primary" data-act="d-consent" data-k="telematics" data-v="1">Reconnect my ${esc(v.model)}</button></div></section>`;
+    return `<div class="dash">${card('span-12', '', '', `<div class="empty-state">${icon('lock')}<h3>Vehicle data is switched off</h3><p class="muted">You turned off the connection to your ${esc(m.oem)}. Range, trip and charging features need battery data.</p><button class="btn primary" data-act="d-consent" data-k="telematics" data-v="1">Reconnect my ${esc(v.model)}</button></div>`)}</div>`;
+  }
+  function batteryCard(v, m, span) {
+    return card(`${span} battery-card`, 'Battery', `<span class="live-tag"><i></i>Live from ${esc(m.oem)}</span>`, `
+      <div class="battery-main"><div class="gauge-wrap">${gauge(v.soc)}<div class="gauge-center"><span class="gauge-value" data-live="soc">${Math.round(v.soc)}%</span><span class="muted small">charged</span></div></div>
+        <div class="battery-stats">${stat('Range', fmt.km(VF.rangeKm(v)), 'range')}${stat('Driving time left', fmt.dur(driveMinutesLeft(v)), 'tte')}</div></div>
+      <div class="card-foot">${esc(statusLine(v))}</div>`);
+  }
+  function tripCard(v, m, t, span) {
+    if (!t) return whereTo(v, span);
+    return card(`${span} trip-card`, 'Current trip', `<button class="link-btn" data-act="d-go" data-tab="driver-charge">Chargers on route</button>`, `
+      <div class="route-line-ui"><div class="end"><i class="dot"></i><strong>${esc(t.origin)}</strong></div><div class="progress"><i data-live="tripw" style="width:${(t.progress * 100).toFixed(1)}%"></i></div><div class="end r"><i class="dot dest"></i><strong>${esc(t.dest)}</strong></div></div>
+      <div class="stats-3">${stat('Distance left', fmt.km(t.left), 'left')}${stat('Arrival', VF.fmtTime(t.eta), 'eta')}${stat('Battery on arrival', Math.round(t.arriveSoc) + '%', 'arrsoc')}</div>
+      <div class="card-foot">${t.b ? `Includes your charging stop at ${esc(VF.station(t.b.stationId).name)}` : 'No charging stop planned'} · arrival updates live</div>`);
+  }
+  function whereTo(v, span) {
+    const opts = Object.entries(VF.PLACES).filter(([id]) => id !== v.node).sort((a, b) => a[1].name.localeCompare(b[1].name)).map(([id, p]) => `<option value="${id}" ${ui.dest === id ? 'selected' : ''}>${esc(p.name)}</option>`).join('');
+    return card(`${span} trip-card`, 'Where to?', '', `<div class="row nowrap"><select class="select grow" id="d-dest" data-chg="d-dest"><option value="">Choose a destination</option>${opts}</select><button class="btn primary" data-act="d-trip">Start trip</button></div>
+      <p class="faint small">Your destination stays on this device and is used only to plan range and charging.</p>`);
+  }
+  function mapCard(v, m, span, title) {
+    return card(`${span} map-card`, title || 'Route and chargers', mapLegend(), `<div class="map-wrap" id="d-mapwrap">${mapHTML(v, m, 'd-map')}</div>`);
+  }
+  function healthCard(v, m, span) {
+    const items = [
+      ['thermo', 'Battery temp', has(m, 'batteryTemp') ? `<span data-live="temp">${fmt.n(v.tempC, 1)} °C</span>` : '<span class="faint">n/a</span>'],
+      ['bolt', 'Efficiency', `${fmt.n(m.eff * 105, 1)} kWh/100 km`],
+      ['car', 'Odometer', `<span data-live="odo">${fmt.n(v.odo)} km</span>`],
+      ['warn', 'Lowest tyre', has(m, 'tyres') ? `${Math.min(...v.tyres)} psi` : '<span class="faint">n/a</span>'],
+    ];
+    return card(`${span}`, 'Vehicle health', `<button class="link-btn" data-act="d-go" data-tab="driver-vehicle">Details</button>`, `<div class="metric-grid">${items.map(([ic, l, val]) => `<div class="metric">${icon(ic)}<span class="stat-label">${l}</span><span class="stat-value sm">${val}</span></div>`).join('')}</div>`);
+  }
+  function updatesCard(d, span) {
+    const list = VF.state.notices.filter((n) => n.driverId === d.id).slice(0, 4);
+    return card(`${span}`, 'Recent updates', `<button class="link-btn" data-act="d-notices">View all</button>`, list.length ? `<ul class="feed">${list.map((n) => `<li><span class="feed-dot"></span><div><strong>${esc(n.title)}</strong><span class="muted small">${esc(n.body)}</span></div><span class="faint small nowrap">${VF.relTime(n.t)}</span></li>`).join('')}</ul>` : '<p class="muted small">Booking and charging updates appear here.</p>');
   }
   function pageHome() {
     const { d, v, m } = ctx();
     if (!d.consents.telematics) return disconnected(d, v, m);
-    const t = tripInfo(v, m); const b = VF.activeBooking(d.id); const reserve = VF.state.settings.reserve;
-    let cta = '';
-    if (b) cta = bookingCard(b, v, m);
-    else if (v.status === 'stranded') cta = `<section class="d-card alert-card bad"><h3>Your battery is empty</h3><p>Call roadside assistance. They receive your booking history but not your location unless you share it.</p></section>`;
-    else if (t && t.arriveSoc < reserve) cta = `<section class="d-card alert-card bad"><div class="row" style="gap:10px;flex-wrap:nowrap">${icon('warn')}<div><h3>You won't reach ${esc(t.dest)} with your ${reserve}% reserve</h3><p class="muted small">At this pace you'd arrive with <strong data-live="arrsoc2">${Math.round(t.arriveSoc)}%</strong>. Charge on the way.</p></div></div>
-        <button class="btn primary big" data-act="d-auto">${icon('bolt')}Book a charger on my route</button><p class="faint small">One tap: we check live availability of every connector that fits your ${esc(v.model)} along the route and hold a slot for your arrival time.</p></section>`;
-    else cta = `<section class="d-card"><div class="row between"><div><h3>Need a charge?</h3><p class="muted small">${t ? `You'll reach ${esc(t.dest)} with about ${Math.round(t.arriveSoc)}%.` : 'Find a free charger near you.'}</p></div><button class="btn" data-act="d-auto">${icon('bolt')}Book on my route</button></div></section>`;
-    const tripCard = t ? `<section class="d-card">
-        <div class="row between"><div><div class="eyebrow">Trip</div><h3>${esc(t.origin)} → ${esc(t.dest)}</h3></div><button class="btn small ghost" data-act="d-go" data-tab="driver-charge">Chargers on route</button></div>
-        <div class="trip-bar"><i data-live="tripw" style="width:${(t.progress * 100).toFixed(1)}%"></i></div>
-        <div class="stat-row"><div><span class="num" data-live="left">${fmt.km(t.left)}</span><small>left</small></div><div><span class="num" data-live="eta">${VF.fmtTime(t.eta)}</span><small>arrival</small></div><div><span class="num" data-live="arrsoc">${Math.round(t.arriveSoc)}%</span><small>battery on arrival</small></div></div>
-      </section>` : whereTo(v);
-    const tiles = [
-      ['thermo', 'Battery temp', has(m, 'batteryTemp') ? `<span data-live="temp">${fmt.n(v.tempC, 1)} °C</span>` : '<span class="faint">n/a</span>'],
-      ['bolt', 'Efficiency', `${fmt.n(m.eff * 105, 1)} kWh/100 km`],
-      ['car', 'Odometer', `<span data-live="odo">${fmt.n(v.odo)} km</span>`],
-      ['warn', 'Tyres (lowest)', has(m, 'tyres') ? `${Math.min(...v.tyres)} psi` : '<span class="faint">n/a</span>'],
-    ];
-    return `<section class="d-card d-hero">
-        <div class="gauge-wrap">${gauge(v.soc)}<div class="gauge-center"><div class="big num" data-live="soc">${Math.round(v.soc)}%</div><div class="muted small" data-live="range">${fmt.km(VF.rangeKm(v))}</div></div></div>
-        <div class="hero-side"><div class="eyebrow">Driving time left on this charge</div><div class="tte" data-live="tte">${fmt.dur(driveMinutesLeft(v))}</div><div class="muted small">${esc(statusLine(v))}</div><div class="oem-tag">${icon('cpu')}Live from ${esc(m.oem)} · <span data-live="sync">just now</span></div></div>
-      </section>
-      ${cta}${tripCard}
-      <section class="d-card flush"><div class="map-wrap" id="d-mapwrap">${mapHTML(v, m, 'd-map')}</div><div class="pad-x">${mapLegend()}</div></section>
-      <section class="tiles">${tiles.map(([ic, l, val]) => `<div class="tile">${icon(ic)}<span class="muted small">${l}</span><strong class="num">${val}</strong></div>`).join('')}</section>`;
-  }
-  function whereTo(v) {
-    const opts = Object.entries(VF.PLACES).filter(([id]) => id !== v.node).sort((a, b) => a[1].name.localeCompare(b[1].name)).map(([id, p]) => `<option value="${id}" ${ui.dest === id ? 'selected' : ''}>${esc(p.name)}</option>`).join('');
-    return `<section class="d-card"><div class="eyebrow">Where to?</div><div class="row" style="flex-wrap:nowrap"><select class="select grow" id="d-dest" data-chg="d-dest"><option value="">Choose a destination</option>${opts}</select><button class="btn primary" data-act="d-trip">Start</button></div><p class="faint small">Your destination stays on this device and is used only to plan range and charging.</p></section>`;
+    const t = tripInfo(v, m);
+    const { list } = routeOptions(d);
+    const canBook = !['charging', 'waiting', 'stranded'].includes(v.status);
+    return `<div class="dash">
+      ${batteryCard(v, m, 'span-4')}
+      ${tripCard(v, m, t, 'span-4')}
+      ${chargeCard(v, m, t, 'span-4')}
+      ${mapCard(v, m, 'span-8')}
+      ${card('span-4', 'Chargers on your route', `<button class="link-btn" data-act="d-go" data-tab="driver-charge">See all</button>`, list.length ? `<ul class="opt-list">${list.slice(0, 4).map((o) => optionRow(o, canBook, true)).join('')}</ul>` : '<p class="muted small">No compatible charger has a free slot on this route in the next 4 hours.</p>')}
+      ${healthCard(v, m, 'span-6')}
+      ${updatesCard(d, 'span-6')}
+    </div>`;
   }
 
   function pageCharge() {
     const { d, v, m } = ctx();
     if (!d.consents.telematics) return disconnected(d, v, m);
     const b = VF.activeBooking(d.id);
-    const ev = VF.evaluateRoute(d.id);
-    const best = {}; for (const o of ev.options) if (!best[o.station.id]) best[o.station.id] = o;
-    const list = Object.values(best).slice(0, 8);
+    const { ev, list } = routeOptions(d);
     const incompat = VF.state.stations.filter((st) => !st.connectors.some((c) => VF.compatible(m, c.type)));
     const canBook = !['charging', 'waiting', 'stranded'].includes(v.status);
-    return `<section class="d-card one-click">
-        <div class="row" style="gap:12px;flex-wrap:nowrap"><div class="oc-icon">${icon('bolt')}</div><div><h3>Book the best charger on my route</h3><p class="muted small">Checks every connector that fits your ${esc(v.model)} (${esc(m.ports.join(', '))}) between you and ${ev.dest ? esc(VF.PLACES[ev.dest].name) : 'nearby'}, then holds a slot for your arrival so you skip the queue.</p></div></div>
-        <button class="btn primary big" data-act="d-auto" ${canBook ? '' : 'disabled'}>${b ? 'Find a better slot' : 'Book now'}</button>
-        ${autoResult()}
-      </section>
-      ${b ? bookingCard(b, v, m) : ''}
-      <section class="d-card flush"><div class="map-wrap" id="d-mapwrap">${mapHTML(v, m, 'd-map')}</div><div class="pad-x">${mapLegend()}</div></section>
-      <section class="d-card"><div class="row between"><h3>Chargers on your route</h3><span class="faint small">${ev.stats.compatible} compatible connectors</span></div>
-        <div class="opt-list">${list.length ? list.map((o) => `<div class="opt">
-          <div class="opt-main"><strong>${esc(o.station.name)}</strong><span class="muted small">${esc(VF.operator(o.station.operatorId).name)} · ${esc(o.c.type)} ${o.c.kw} kW · ${o.detour < 0.5 ? 'on route' : '+' + fmt.km(o.detour) + ' detour'}</span>
-            <span class="small">${o.wait ? `<span class="pill warn plain">Wait ${o.wait} min</span>` : '<span class="pill ok plain">Free on arrival</span>'} Arrive ${VF.fmtTime(o.eta)} with ${Math.max(0, Math.round(o.arriveSoc))}% · ${fmt.dur(o.dur)} to ${Math.round(o.target)}% · ${fmt.money(o.cost, 0)}</span></div>
-          <button class="btn small" data-act="d-book" data-st="${o.station.id}" data-c="${o.c.id}" ${canBook ? '' : 'disabled'}>Book</button></div>`).join('') : '<div class="empty">No compatible charger has a free slot on this route in the next 4 hours.</div>'}</div>
-      </section>
-      ${incompat.length ? `<section class="d-card"><h3>Not compatible with your car</h3><p class="muted small">Your ${esc(v.model)} uses ${esc(m.ports.join(' and '))}. These stations only have other plugs:</p><ul class="plain-list">${incompat.map((st) => `<li><span>${esc(st.name)}</span><span class="faint small">${esc([...new Set(st.connectors.map((c) => c.type))].join(', '))}</span></li>`).join('')}</ul></section>` : ''}`;
+    return `<div class="dash">
+      <section class="card span-12 one-click"><div class="one-click-row"><div class="oc-icon">${icon('bolt')}</div><div class="grow"><h3>Book the best charger on my route</h3><p class="muted small">Checks every connector that fits your ${esc(v.model)} (${esc(m.ports.join(', '))}) between you and ${ev.dest ? esc(VF.PLACES[ev.dest].name) : 'nearby'}, then holds a slot for your arrival so you skip the queue.</p></div>
+        <button class="btn primary lg" data-act="d-auto" ${canBook ? '' : 'disabled'}>${b ? 'Find a better slot' : 'Book now'}</button></div>${autoResult()}</section>
+      ${b ? chargeCard(v, m, tripInfo(v, m), 'span-12') : ''}
+      ${mapCard(v, m, 'span-7', 'Chargers near your route')}
+      ${card('span-5', 'Best options', `<span class="faint small">${ev.stats.compatible} compatible connectors</span>`, list.length ? `<ul class="opt-list">${list.slice(0, 8).map((o) => optionRow(o, canBook)).join('')}</ul>` : '<p class="muted small">No compatible charger has a free slot on this route in the next 4 hours.</p>')}
+      ${incompat.length ? card('span-12', 'Not compatible with your car', '', `<p class="muted small">Your ${esc(v.model)} uses ${esc(m.ports.join(' and '))}. These stations only have other plugs.</p><div class="chips">${incompat.map((st) => `<span class="chip">${esc(st.name)} · ${esc([...new Set(st.connectors.map((c) => c.type))].join(', '))}</span>`).join('')}</div>`) : ''}
+    </div>`;
   }
 
   function pageBookings() {
@@ -189,9 +216,11 @@
     const active = mine.find((b) => ['confirmed', 'charging'].includes(b.status));
     const past = mine.filter((b) => b !== active);
     const sessions = VF.state.sessions.filter((x) => x.driverId === d.id);
-    return `${active ? bookingCard(active, v, m) : `<section class="d-card"><div class="empty-state">${icon('ticket')}<h3>No active booking</h3><p class="muted">Book from the Charge tab. Your slot is held so you don't queue.</p><button class="btn primary" data-act="d-go" data-tab="driver-charge">Find a charger</button></div></section>`}
-      <section class="d-card"><h3>History</h3>${past.length ? `<ul class="plain-list">${past.map((b) => `<li><div><strong>${esc(VF.station(b.stationId).name)}</strong><div class="faint small">${VF.fmtStamp(b.start)} · ${esc(b.code)}${b.cancelReason ? ' · ' + esc(b.cancelReason) : ''}</div></div><div class="right">${VF.bookingPill(b)}${b.actualKwh != null ? `<div class="small num">${fmt.kwh(b.actualKwh)} · ${fmt.money(b.actualCost)}</div>` : ''}</div></li>`).join('')}</ul>` : '<p class="muted small">Past bookings will appear here.</p>'}</section>
-      <section class="d-card"><h3>Charging this month</h3><div class="stat-row"><div><span class="num">${sessions.length}</span><small>sessions</small></div><div><span class="num">${fmt.kwh(sum(sessions, (x) => x.kwh))}</span><small>energy</small></div><div><span class="num">${fmt.money(sum(sessions, (x) => x.cost), 0)}</span><small>spent</small></div></div></section>`;
+    return `<div class="dash">
+      ${active ? chargeCard(v, m, tripInfo(v, m), 'span-6') : card('span-6', 'Active booking', '', `<div class="empty-state">${icon('ticket')}<p class="muted">No active booking. Your slot is held when you book, so you never queue.</p><button class="btn primary" data-act="d-go" data-tab="driver-charge">Find a charger</button></div>`)}
+      ${card('span-6', 'Charging this month', '', `<div class="stats-3">${stat('Sessions', sessions.length)}${stat('Energy', fmt.kwh(sum(sessions, (x) => x.kwh)))}${stat('Spent', fmt.money(sum(sessions, (x) => x.cost), 0))}</div>`)}
+      ${card('span-12 flush', 'History', '', past.length ? `<div class="table-wrap"><table class="t"><thead><tr><th>Station</th><th>Date</th><th>Code</th><th>Status</th><th class="r">Energy</th><th class="r">Cost</th></tr></thead><tbody>${past.map((b) => `<tr><td class="strong">${esc(VF.station(b.stationId).name)}</td><td class="num">${VF.fmtStamp(b.start)}</td><td class="mono small">${esc(b.code)}</td><td>${VF.bookingPill(b)}</td><td class="r num">${b.actualKwh != null ? fmt.kwh(b.actualKwh) : '—'}</td><td class="r num">${b.actualCost != null ? fmt.money(b.actualCost) : '—'}</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted small pad">Past bookings will appear here.</p>')}
+    </div>`;
   }
 
   function pageVehicle() {
@@ -207,15 +236,15 @@
     };
     const compatCount = VF.state.stations.filter((st) => st.connectors.some((c) => VF.compatible(m, c.type))).length;
     const connected = d.consents.telematics;
-    return `<section class="d-card"><div class="row between"><div><div class="eyebrow">${esc(m.oem)} · ${esc(m.spec)}</div><h3>${esc(v.model)}</h3><div class="muted small">${esc(v.plate || '—')} · VIN ${esc(v.vin || '—')}</div></div><div class="oem-badge">${esc(m.oem)}</div></div>
-        <div class="stat-row"><div><span class="num">${m.kwh} kWh</span><small>battery</small></div><div><span class="num">${m.dc} kW</span><small>max DC</small></div><div><span class="num">${m.ac} kW</span><small>max AC</small></div></div></section>
-      <section class="d-card"><div class="row between"><h3>Connection</h3>${connected ? pill('ok', 'Connected') : pill('warn', 'Off')}</div>
-        <dl class="dl"><dt>Method</dt><dd>${esc(o.method)}</dd><dt>Sign-in</dt><dd>${esc(o.auth)}</dd><dt>Linked</dt><dd>${VF.fmtDate(v.linked.at)}</dd></dl>
-        <div class="scopes"><div class="faint small">What VoltFleet reads</div><ul><li>Battery %, range and charging state</li><li>Odometer and diagnostics</li><li>Location: used on this phone for routing and arrival time; never sent to stations or shown to staff</li></ul></div>
-        <button class="btn ${connected ? 'danger' : 'primary'}" data-act="d-consent" data-k="telematics" data-v="${connected ? 0 : 1}">${connected ? 'Disconnect vehicle' : 'Reconnect vehicle'}</button></section>
-      ${connected ? `<section class="d-card"><h3>Live vehicle data</h3><dl class="dl">${VF.TELEMETRY_FIELDS.map(([k, label], i) => `<dt>${label}</dt><dd>${o.cov[i] ? tele[k] : `<span class="faint">Not available from ${esc(m.oem)}</span>`}${o.cov[i] === 1 ? ' <span class="faint small">(model-dependent)</span>' : ''}</dd>`).join('')}</dl></section>` : ''}
-      <section class="d-card"><h3>Plugs that fit</h3><div class="chips">${Object.keys(VF.CONNECTOR_TYPES).map((t) => `<span class="chip ${VF.compatible(m, t) ? 'yes' : 'no'}">${VF.compatible(m, t) ? icon('check') : ''}${esc(t)}</span>`).join('')}</div><p class="muted small">${compatCount} of ${VF.state.stations.length} stations on the network have a plug for your car.</p></section>
-      ${VF.connectedAppsHTML ? VF.connectedAppsHTML(d.id) : ''}`;
+    return `<div class="dash">
+      ${card('span-6', esc(v.model), `<span class="oem-badge">${esc(m.oem)}</span>`, `<p class="muted small">${esc(m.spec)} · ${esc(v.plate || '—')} · VIN ${esc(v.vin || '—')}</p><div class="stats-3">${stat('Battery', m.kwh + ' kWh')}${stat('Max DC', m.dc + ' kW')}${stat('Max AC', m.ac + ' kW')}</div>`)}
+      ${card('span-6', 'Connection', connected ? pill('ok', 'Connected') : pill('warn', 'Off'), `<dl class="dl"><dt>Method</dt><dd>${esc(o.method)}</dd><dt>Sign-in</dt><dd>${esc(o.auth)}</dd><dt>Linked</dt><dd>${VF.fmtDate(v.linked.at)}</dd></dl>
+        <p class="faint small">VoltFleet reads battery, range, charging state, odometer and diagnostics. Location is used on this phone for routing and arrival time, and is never sent to stations or shown to staff.</p>
+        <div class="card-actions"><button class="btn ${connected ? 'danger' : 'primary'}" data-act="d-consent" data-k="telematics" data-v="${connected ? 0 : 1}">${connected ? 'Disconnect vehicle' : 'Reconnect vehicle'}</button></div>`)}
+      ${connected ? card('span-6', 'Live vehicle data', '', `<dl class="dl">${VF.TELEMETRY_FIELDS.map(([k, label], i) => `<dt>${label}</dt><dd>${o.cov[i] ? tele[k] : `<span class="faint">Not available from ${esc(m.oem)}</span>`}${o.cov[i] === 1 ? ' <span class="faint small">(some models)</span>' : ''}</dd>`).join('')}</dl>`) : ''}
+      ${card(connected ? 'span-6' : 'span-12', 'Plugs that fit', '', `<div class="chips">${Object.keys(VF.CONNECTOR_TYPES).map((t) => `<span class="chip ${VF.compatible(m, t) ? 'yes' : 'no'}">${VF.compatible(m, t) ? icon('check') : ''}${esc(t)}</span>`).join('')}</div><p class="muted small">${compatCount} of ${VF.state.stations.length} stations on the network have a plug for your car.</p>`)}
+      ${VF.connectedAppsHTML ? VF.connectedAppsHTML(d.id) : ''}
+    </div>`;
   }
 
   const CONSENTS = [
@@ -226,19 +255,21 @@
     ['marketing', 'Offers from VoltFleet and partners', 'Off by default. We never sell your data.'],
   ];
   function pagePrivacy() {
-    const { u, d, v, m } = ctx();
+    const { u, d, v } = ctx();
     const b = VF.activeBooking(d.id);
     const opId = b ? b.operatorId : 'op1';
-    return `<section class="d-card"><div class="row" style="gap:10px;flex-wrap:nowrap">${icon('shield')}<div><h3>You control what leaves your car</h3><p class="muted small">Stations never see your name, phone, plate or location. Staff can only see masked details, and every look is logged.</p></div></div></section>
-      <section class="d-card"><h3>Sharing</h3><div class="toggles">${CONSENTS.map(([k, t, desc]) => `<label class="toggle"><span><strong>${t}</strong><span class="muted small">${desc}</span></span><input type="checkbox" role="switch" id="c-${k}" data-chg="d-consent-box" data-k="${k}" ${d.consents[k] ? 'checked' : ''}></label>`).join('')}</div></section>
-      <section class="d-card"><h3>What a station sees when you book</h3><p class="muted small">Exactly this, at ${esc(VF.operator(opId).name)}${b ? ' for your current booking' : ''}:</p>
+    return `<div class="dash">
+      <section class="card span-12 banner">${icon('shield')}<div><h3>You control what leaves your car</h3><p class="muted small">Stations never see your name, phone, plate or location. Staff only see masked details, and every look is logged.</p></div></section>
+      ${card('span-7', 'Sharing', '', `<div class="toggles">${CONSENTS.map(([k, t, desc]) => `<label class="toggle"><span><strong>${t}</strong><span class="muted small">${desc}</span></span><input type="checkbox" role="switch" id="c-${k}" data-chg="d-consent-box" data-k="${k}" ${d.consents[k] ? 'checked' : ''}></label>`).join('')}</div>`)}
+      ${card('span-5', 'What a station sees', '', `<p class="muted small">Exactly this, at ${esc(VF.operator(opId).name)}${b ? ' for your current booking' : ''}:</p>
         <dl class="dl boxed"><dt>Driver</dt><dd class="mono">${VF.pseudo(d.id, opId)}</dd><dt>Vehicle</dt><dd>${esc(v.model)}</dd><dt>Booking code</dt><dd class="mono">${b ? esc(b.code) : 'VF-····'}</dd><dt>Arrival time</dt><dd>${d.consents.shareEta ? 'Live updates' : 'Booked slot only'}</dd><dt>Battery on arrival</dt><dd>${d.consents.shareSoc ? 'Shared' : 'Not shared'}</dd><dt>Name, phone, plate, location</dt><dd>Never</dd></dl>
-        <p class="faint small">Each operator sees a different driver ID, so networks can't link your visits.</p></section>
-      <section class="d-card"><h3>Your data</h3><p class="muted small">Get a copy of everything we hold about you, or delete your account.</p>
-        <div class="row"><button class="btn" data-act="d-export" data-mode="copy">${icon('copy')}Copy my data</button><button class="btn" data-act="d-export" data-mode="dl">${icon('download')}Download</button></div>
-        <div class="row" style="margin-top:8px">${ui.confirmDelete ? `<div class="confirm-box"><strong>Delete your account?</strong><p class="small muted">Your profile, vehicle link and preferences are erased now. Billing records keep a pseudonymous ID for ${Math.round(VF.state.settings.retention.sessions / 30)} months, as the law requires, then are deleted.</p><div class="row"><button class="btn danger" data-act="d-delete-yes">Delete my account</button><button class="btn" data-act="d-delete-no">Keep it</button></div></div>` : `<button class="btn ghost danger" data-act="d-delete">${icon('trash')}Delete my account</button>`}</div></section>
-      <section class="d-card"><h3>Consent history</h3><ul class="plain-list">${d.consentLog.slice().reverse().slice(0, 12).map((l) => `<li><span class="small">${esc(l.key === 'all' ? l.value : `${(CONSENTS.find((c) => c[0] === l.key) || [0, l.key])[1]}: ${l.value ? 'on' : 'off'}`)}</span><span class="faint small">${VF.fmtStamp(l.t)}</span></li>`).join('')}</ul></section>
-      <p class="faint small center">Signed in as ${esc(u.name)} · ${esc(u.email)}</p>`;
+        <p class="faint small">Each operator sees a different driver ID, so networks can't link your visits.</p>`)}
+      ${card('span-6', 'Your data', '', `<p class="muted small">Get a copy of everything we hold about you, or delete your account.</p>
+        <div class="card-actions"><button class="btn" data-act="d-export" data-mode="copy">${icon('copy')}Copy my data</button><button class="btn" data-act="d-export" data-mode="dl">${icon('download')}Download</button></div>
+        ${ui.confirmDelete ? `<div class="confirm-box"><strong>Delete your account?</strong><p class="small muted">Your profile, vehicle link and preferences are erased now. Billing records keep a pseudonymous ID for ${Math.round(VF.state.settings.retention.sessions / 30)} months, as the law requires, then are deleted.</p><div class="row"><button class="btn danger" data-act="d-delete-yes">Delete my account</button><button class="btn" data-act="d-delete-no">Keep it</button></div></div>` : `<button class="btn ghost danger" data-act="d-delete">${icon('trash')}Delete my account</button>`}
+        <p class="faint small">Signed in as ${esc(u.name)} · ${esc(u.email)}</p>`)}
+      ${card('span-6', 'Consent history', '', `<ul class="plain-list">${d.consentLog.slice().reverse().slice(0, 8).map((l) => `<li><span class="small">${esc(l.key === 'all' ? l.value : `${(CONSENTS.find((c) => c[0] === l.key) || [0, l.key])[1]}: ${l.value ? 'on' : 'off'}`)}</span><span class="faint small nowrap">${VF.fmtStamp(l.t)}</span></li>`).join('')}</ul>`)}
+    </div>`;
   }
 
   // ---------------------------------------------------------------- live values
@@ -265,8 +296,8 @@
     const { d, v, m } = ctx();
     const b = VF.activeBooking(d.id); const t = tripInfo(v, m);
     const c = b && VF.connector(b.connectorId);
-    let k = [page, v.status, d.consents.telematics, b ? b.id + b.status : '', c ? (c.session && c.session.bookingId !== b.id ? 'w' : '') : '', t ? t.dest + (t.arriveSoc < VF.state.settings.reserve) : 'no', ui.confirmDelete, ui.auto ? ui.auto.t : 0].join('|');
-    if (page === 'driver-charge') {
+    let k = [page, v.status, d.consents.telematics, VF.state.notices.filter((n) => n.driverId === d.id).length, b ? b.id + b.status : '', c ? (c.session && c.session.bookingId !== b.id ? 'w' : '') : '', t ? t.dest + (t.arriveSoc < VF.state.settings.reserve) : 'no', ui.confirmDelete, ui.auto ? ui.auto.t : 0].join('|');
+    if (page === 'driver-charge' || page === 'driver-home') {
       const ev = VF.evaluateRoute(d.id); const seen = {};
       k += ev.options.filter((o) => (seen[o.station.id] ? false : (seen[o.station.id] = 1))).slice(0, 8).map((o) => o.c.id + (o.wait > 0 ? 'w' : '') + Math.round(o.arriveSoc / 5)).join();
     }
@@ -301,12 +332,17 @@
       { id: 'driver-privacy', label: 'Privacy', icon: 'shield', title: 'Privacy & data' },
     ],
     pages: { 'driver-home': pageHome, 'driver-charge': pageCharge, 'driver-bookings': pageBookings, 'driver-vehicle': pageVehicle, 'driver-privacy': pagePrivacy },
-    header() {
-      const { u, v } = ctx();
+    roleLabel: () => 'Driver',
+    title(page) {
+      if (page !== 'driver-home') return null;
+      const { u } = ctx(); const h = VF.hourOf(VF.now());
+      return `Good ${h < 12 ? 'morning' : h < 17 ? 'afternoon' : 'evening'}, ${u.name.split(' ')[0]}`;
+    },
+    eyebrow() { const { v } = ctx(); return `${v.model}${v.plate ? ' · ' + v.plate : ''}`; },
+    tools() {
+      const { u } = ctx();
       const unread = VF.state.notices.filter((n) => n.driverId === u.driverId && !n.read).length;
-      return `<div class="avatar">${esc(u.name.split(' ').map((p) => p[0]).join(''))}</div><div class="grow"><div class="small muted">Hi ${esc(u.name.split(' ')[0])}</div><strong>${esc(v.model)}</strong></div>
-        <button class="icon-btn bell" data-act="d-notices" aria-label="Updates">${icon('bell')}${unread ? `<span class="dot-count">${unread}</span>` : ''}</button>
-        <button class="icon-btn switch-acct" data-act="signout" aria-label="Switch account" title="Switch account">${icon('logout')}</button>`;
+      return `<button class="icon-btn bell" data-act="d-notices" aria-label="Updates" title="Updates">${icon('bell')}${unread ? `<span class="dot-count">${unread}</span>` : ''}</button>`;
     },
     structKey,
     live(page) {

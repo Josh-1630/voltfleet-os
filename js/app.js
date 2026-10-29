@@ -42,34 +42,26 @@
   const speedText = () => (VF.state.clock.paused ? 'Paused' : `Demo feed · ${VF.state.clock.speed}×`);
 
   // ---------------------------------------------------------------- shells
+  const ROLE_NAME = { driver: 'Driver', operator: 'Operator manager', admin: 'Super admin', developer: 'Developer' };
   function renderShell() {
     const r = current.role; const app = appFor(r); const u = VF.user(VF.session.userId);
-    if (r === 'driver') {
-      $('#root').innerHTML = `<div class="driver-shell">
-        <aside class="driver-aside"><span class="brand">${brandMark()}<span class="brand-name">VoltFleet<span>OS</span></span></span>
-          <h2>Driver app</h2><p class="muted">This is the phone app ${esc(u.name.split(' ')[0])} uses. It only ever shows ${esc(u.name.split(' ')[0])}'s own car, trips and bookings.</p>
-          <ul class="check-list small"><li>${icon('check')}<span>Battery, range and driving time left, live from the car</span></li><li>${icon('check')}<span>Chargers on the route that fit this car's plug</span></li><li>${icon('check')}<span>One tap to check availability and hold a slot, so no queue</span></li><li>${icon('check')}<span>Sharing controls and a copy of their data</span></li></ul>
-          <div class="aside-clock"><span class="num" data-live="clock">${clockText()}</span><span class="demo-badge" data-live="speed">${speedText()}</span></div>
-          <button class="btn" data-act="signout">${icon('logout')}Switch account</button></aside>
-        <div class="phone">
-          <header class="phone-head" id="d-head">${app.header()}</header>
-          <main class="phone-main" id="view" tabindex="-1"></main>
-          <nav class="tabbar" id="nav-links"></nav>
-          <div class="sheet-wrap" id="d-sheetwrap" hidden><div class="sheet-backdrop" data-act="d-sheet-close"></div><div class="sheet" id="d-sheet" role="dialog" aria-modal="true"></div></div>
-        </div></div>`;
-    } else {
-      $('#root').innerHTML = `<div class="console">
-        <aside class="nav" aria-label="Main"><span class="brand">${brandMark()}<span class="brand-name">VoltFleet<span>OS</span></span></span>
-          <div class="role-tag">${esc(app.roleLabel())}</div>
-          <nav class="nav-links" id="nav-links"></nav>
-          <div class="nav-foot"><div class="user-chip"><span class="avatar sm">${esc(u.name.split(' ').map((p) => p[0]).join(''))}</span><span><strong>${esc(u.name)}</strong><span class="faint small">${r === 'admin' ? 'Super admin' : r === 'developer' ? 'Developer' : 'Operator manager'}</span></span></div>
-          <button class="btn small" data-act="signout">${icon('logout')}Switch account</button></div></aside>
-        <div class="main">
-          <header class="topbar"><div class="topbar-title"><div class="eyebrow" id="view-eyebrow"></div><h1 id="view-title"></h1></div>
-            <div class="topbar-tools"><span class="clock num" data-live="clock">${clockText()}</span><span class="demo-badge" data-live="speed">${speedText()}</span></div></header>
-          <main id="view" class="view" tabindex="-1"></main>
-        </div></div>`;
-    }
+    const initials = esc(u.name.split(' ').map((p) => p[0]).join(''));
+    $('#root').innerHTML = `<div class="console role-${r}">
+      <aside class="nav" aria-label="Main">
+        <span class="brand">${brandMark()}<span class="brand-name">VoltFleet<span>OS</span></span></span>
+        <div class="workspace"><span class="ws-label">${r === 'driver' ? 'Driver app' : 'Workspace'}</span><strong>${esc(r === 'driver' ? VF.driverVehicle(u.driverId).model : app.roleLabel())}</strong></div>
+        <nav class="nav-links" id="nav-links"></nav>
+        <div class="nav-foot"><div class="user-chip"><span class="avatar sm">${initials}</span><span><strong>${esc(u.name)}</strong><span class="faint small">${ROLE_NAME[r]}</span></span></div>
+          <button class="btn small ghost" data-act="signout">${icon('logout')}Switch account</button></div>
+      </aside>
+      <div class="main">
+        <header class="topbar"><div class="topbar-title"><div class="eyebrow" id="view-eyebrow"></div><h1 id="view-title"></h1></div>
+          <div class="topbar-tools"><span class="clock-pill"><i class="live-dot"></i><span class="num" data-live="clock">${clockText()}</span><span class="sep"></span><span data-live="speed">${speedText()}</span></span>
+            <span id="tools" class="tools"></span><button class="icon-btn mobile-only" data-act="signout" aria-label="Switch account" title="Switch account">${icon('logout')}</button></div></header>
+        <main id="view" class="view" tabindex="-1"></main>
+      </div>
+      ${r === 'driver' ? '<div class="sheet-wrap" id="d-sheetwrap" hidden><div class="sheet-backdrop" data-act="d-sheet-close"></div><div class="sheet" id="d-sheet" role="dialog" aria-modal="true"></div></div>' : ''}
+    </div>`;
     renderPage(false);
   }
   function renderNav() {
@@ -80,20 +72,20 @@
   function renderPage(keep) {
     const app = appFor(current.role); const page = current.page; const meta = app.nav.find((n) => n.id === page);
     const view = $('#view'); if (!view) return;
-    const scroller = current.role === 'driver' && getComputedStyle(view).overflowY === 'auto' ? view : null;
-    const y = scroller ? scroller.scrollTop : window.scrollY;
+    const y = window.scrollY;
     const ae = document.activeElement; const fid = ae && ae.id && view.contains(ae) ? ae.id : null;
     let caret = null; try { caret = fid ? ae.selectionStart : null; } catch (e) { caret = null; }
     view.innerHTML = app.pages[page]();
     view._html = null;
     document.title = `${meta.title} · VoltFleet OS`;
-    if ($('#view-title')) { $('#view-title').textContent = meta.title; $('#view-eyebrow').textContent = meta.eyebrow || ''; }
-    if (current.role === 'driver') { VF.setHTML($('#d-head'), app.header()); VF.renderSheet(); }
+    $('#view-title').textContent = (app.title && app.title(page)) || meta.title;
+    $('#view-eyebrow').textContent = (app.eyebrow && app.eyebrow(page)) || meta.eyebrow || '';
+    VF.setHTML($('#tools'), app.tools ? app.tools() : '');
+    if (current.role === 'driver') VF.renderSheet();
     renderNav();
     lastKey = app.structKey ? app.structKey(page) : page;
     drawCharts();
-    if (keep) { if (scroller) scroller.scrollTop = y; else window.scrollTo(0, y); }
-    else { if (scroller) scroller.scrollTop = 0; window.scrollTo(0, 0); }
+    window.scrollTo(0, keep ? y : 0);
     if (fid) { const el = document.getElementById(fid); if (el) { el.focus(); if (caret != null) try { el.setSelectionRange(caret, caret); } catch (e) { /* not a text field */ } } }
     if (app.live) { const vals = app.live(page); if (vals) applyLive(vals); }
   }
@@ -151,7 +143,7 @@
     if (VF.route() === 'signin') routeChange(); else location.hash = 'signin';
     if (msg) VF.toast(msg);
   };
-  VF.onNotice = (driverId, title) => { if (current && current.role === 'driver' && VF.user(VF.session.userId).driverId === driverId) VF.toast(title); };
+  VF.onNotice = (driverId, title) => { if (/^Booked:/.test(title)) return; if (current && current.role === 'driver' && VF.user(VF.session.userId).driverId === driverId) VF.toast(title); };
 
   Object.assign(VF.ACT, {
     signin: (el) => signIn(el.dataset.id),
@@ -168,7 +160,7 @@
     const app = appFor(current.role);
     applyLive({ clock: clockText(), speed: speedText() });
     renderNav();
-    if (current.role === 'driver') VF.setHTML($('#d-head'), app.header());
+    if (app.tools) VF.setHTML($('#tools'), app.tools());
     const ae = document.activeElement;
     const editing = ae && $('#view') && $('#view').contains(ae) && /^(INPUT|SELECT|TEXTAREA)$/.test(ae.tagName);
     const key = app.structKey ? app.structKey(current.page) : current.page;

@@ -48,7 +48,7 @@
     else if (res) detail = `<div class="small">Held for <span class="mono">${esc(res.code)}</span> · ${esc(res.model)} · arrives ${bookingEta(res)}</div>`;
     else if (nb) detail = `<div class="small muted">Next booking ${VF.fmtTime(nb.start)} · ${esc(nb.model)}</div>`;
     else detail = `<div class="small faint">${c.status === 'Finishing' ? 'Vehicle unplugging' : 'No booking in the next hours'}</div>`;
-    return `<div class="conn-row"><div class="conn-id"><strong>${esc(c.label)}</strong><span class="faint small">${esc(c.type)} · ${c.kw} kW</span></div><div class="conn-detail">${VF.connPill(c)}${detail}</div><div class="conn-act">${actions(c)}</div></div>`;
+    return `<div class="conn-row"><div class="conn-id"><strong>${esc(c.label)}</strong><span class="faint small">${esc(c.type)} · ${c.kw} kW</span></div><div class="conn-status">${VF.connPill(c)}</div><div class="conn-detail">${detail}</div><div class="conn-act">${actions(c)}</div></div>`;
   }
   function stationCard(st) {
     const load = stationLoad(st);

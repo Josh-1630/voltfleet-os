@@ -272,7 +272,7 @@
     if (!VF.state.connect) return '';
     const gs = C().grants.filter((g) => g.driverId === driverId && !g.revoked);
     const available = C().apps.filter((a) => a.mode === 'live' && a.status === 'active' && !gs.some((g) => g.appId === a.id));
-    return `<section class="d-card"><div class="row between"><h3>Connected apps</h3><span class="faint small">via VoltFleet Connect</span></div>
+    return `<section class="card span-12"><div class="card-head"><h3>Connected apps</h3><span class="faint small">via VoltFleet Connect</span></div>
       <p class="muted small">Apps you allowed to use your vehicle data. They see a vehicle ID, never your name, phone or plate.</p>
       ${gs.length ? `<ul class="plain-list">${gs.map((g) => { const a = app(g.appId); return `<li><div><strong>${esc(a.name)}</strong><div class="faint small">${esc(org(a.orgId).name)} · since ${VF.fmtDate(g.at)}</div><div class="chips" style="margin-top:6px">${g.scopes.map((x) => `<span class="chip yes">${esc(SCOPES[x])}</span>`).join('')}</div></div><button class="btn small ghost danger" data-act="cx-revoke" data-id="${g.id}">Revoke</button></li>`; }).join('')}</ul>` : '<p class="small faint">No apps connected.</p>'}
       ${available.length ? `<button class="btn" data-act="cx-open-driver" data-app="${available[0].id}">${icon('plus') || ''}Connect ${esc(available[0].name)} (demo)</button>` : ''}</section>`;

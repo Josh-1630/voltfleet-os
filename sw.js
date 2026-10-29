@@ -1,5 +1,5 @@
 // Offline cache for the app shell, so dispatchers keep working through connectivity drops.
-const CACHE = 'voltfleet-os-v3';
+const CACHE = 'voltfleet-os-v4';
 const SHELL = ['./', 'index.html', 'styles.css', 'js/core.js', 'js/driver.js', 'js/operator.js', 'js/admin.js', 'js/connect.js', 'js/app.js', 'manifest.webmanifest', 'icon.svg'];
 self.addEventListener('install', (e) => { e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', (e) => {
