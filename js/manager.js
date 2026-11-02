@@ -61,31 +61,115 @@
   const mapLegend = () => C.legend([['In use', 'teal'], ['Charging', 'mint'], ['Available', 'ok'], ['Needs attention', 'warn'], ['Station free', 'ok-sq'], ['Station busy', 'warn-sq']]);
 
   // ---------------------------------------------------------------- dashboard
-  function kpis() {
-    const f = F(); const vs = f.vehicles; const m30 = VF.fleetMetrics(30);
+  // ---------------------------------------------------------------- live metric tiles
+  // Each tile is built once; its numbers glide to new values (data-tween) as the fleet changes.
+  function kpiData() {
+    const f = F(); const vs = f.vehicles; const m30 = VF.fleetMetrics(30); const m14 = VF.fleetMetrics(15).daily.filter((x) => x.d < 29);
     const active = vs.filter((v) => v.status === 'in_use' || v.status === 'charging').length;
     const avg = vs.length ? sum(vs, (v) => v.soc) / vs.length : 0;
     const low = vs.filter((v) => v.soc < 20).length;
     const range = sum(vs.filter((v) => v.status !== 'offline'), (v) => VF.fleetRange(v));
+    const fullRange = sum(vs.filter((v) => v.status !== 'offline'), (v) => VF.fleetRange(Object.assign({}, v, { soc: 100, rangeKm: null })));
     const ports = fleetPorts();
     const online = VF.state.stations.filter((st) => st.status === 'online' && st.connectors.some((c) => ports.includes(c.type)));
     const free = online.filter((st) => st.connectors.some((c) => ports.includes(c.type) && c.status === 'Available'));
     const freeConns = sum(online, (st) => st.connectors.filter((c) => ports.includes(c.type) && c.status === 'Available').length);
     const tr = (k) => { const t = VF.fleetTrend(k); return { dir: t >= 0 ? 'up' : 'down', text: `${Math.abs(t).toFixed(0)}% vs last week` }; };
     const cost = tr('cost'); cost.good = cost.dir === 'down';
-    const kwh = tr('kwh');
-    const co2 = tr('km'); co2.good = co2.dir === 'up';
+    const kwh = tr('kwh'); const co2 = tr('km'); co2.good = co2.dir === 'up';
+    const c = (st) => vs.filter((v) => v.status === st).length;
+    let acc = 0; const co2Series = m14.map((x) => (acc += (x.km * VF.CO2.DIESEL_KG_PER_KM - x.kwh * VF.CO2.GRID_KG_PER_KWH) / 1000));
     return [
-      C.stat({ icon: 'car-front', label: 'Total vehicles', value: vs.length, hint: `${f.drivers.length} drivers · ${f.depots.length} depots`, tip: 'Company vehicles in GreenLine Logistics' }),
-      C.stat({ icon: 'activity', label: 'Active vehicles', value: active, unit: `/ ${vs.length}`, hint: `${vs.filter((v) => v.status === 'maintenance').length} in maintenance · ${vs.filter((v) => v.status === 'offline').length} offline`, tip: 'On a job or charging right now' }),
-      C.stat({ icon: 'battery-medium', label: 'Average battery', value: Math.round(avg), unit: '%', hint: low ? `${low} vehicle${low > 1 ? 's' : ''} below 20%` : 'All vehicles above 20%', tone: low ? 'warn' : '' }),
-      C.stat({ icon: 'zap', label: 'Energy consumed', value: fmt.n(m30.kwh), unit: 'kWh', trend: kwh, hint: `${fmt.n(m30.per100, 1)} kWh/100 km · 30 days` }),
-      C.stat({ icon: 'coins', label: 'Charging cost', value: money(m30.cost, 0), trend: cost, hint: `${money(m30.costPerKwh)} per kWh · 30 days` }),
-      C.stat({ icon: 'gauge', label: 'Estimated range', value: fmt.n(range), unit: 'km', hint: `${fmt.n(range / Math.max(1, vs.length))} km average per vehicle`, tip: 'Combined range of all reporting vehicles at current charge' }),
-      C.stat({ icon: 'leaf', label: 'CO₂ emissions saved', value: fmt.n(m30.co2, 1), unit: 't', trend: co2, hint: 'vs. diesel equivalents · 30 days', tone: 'lime' }),
-      C.stat({ icon: 'plug-zap', label: 'Available stations', value: free.length, unit: `/ ${online.length}`, hint: `${freeConns} compatible connectors free now`, tip: 'Stations with a connector that fits at least one fleet vehicle' }),
-    ].join('');
+      { icon: 'car-front', label: 'Total vehicles', value: String(vs.length), hint: `${f.drivers.length} drivers · ${f.depots.length} depots`, viz: { seg: [['teal', c('in_use')], ['mint', c('charging') + c('waiting')], ['ok', c('available')], ['warn', c('maintenance')], ['muted', c('offline')]] } },
+      { icon: 'activity', label: 'Active vehicles', value: String(active), unit: `/ ${vs.length}`, hint: `${c('maintenance')} in maintenance · ${c('offline')} offline`, viz: { ring: vs.length ? active / vs.length * 100 : 0, tone: 'teal' } },
+      { icon: 'battery-medium', label: 'Average battery', value: String(Math.round(avg)), unit: '%', hint: low ? `${low} vehicle${low > 1 ? 's' : ''} below 20%` : 'All vehicles above 20%', tone: low ? 'warn' : '', viz: { ring: avg, tone: low ? 'warn' : 'mint' } },
+      { icon: 'zap', label: 'Energy consumed', value: fmt.n(m30.kwh), unit: 'kWh', trend: kwh, hint: `${fmt.n(m30.per100, 1)} kWh/100 km · 30 days`, viz: { spark: m14.map((x) => x.kwh), tone: 'teal' } },
+      { icon: 'coins', label: 'Charging cost', value: money(m30.cost, 0), trend: cost, hint: `${money(m30.costPerKwh)} per kWh · 30 days`, viz: { spark: m14.map((x) => x.cost), tone: 'mint' } },
+      { icon: 'gauge', label: 'Estimated range', value: fmt.n(range), unit: 'km', hint: `${fmt.n(range / Math.max(1, vs.length))} km average per vehicle`, viz: { meter: fullRange ? range / fullRange * 100 : 0 } },
+      { icon: 'leaf', label: 'CO₂ emissions saved', value: fmt.n(m30.co2, 1), unit: 't', trend: co2, hint: 'vs. diesel equivalents · 30 days', tone: 'lime', viz: { spark: co2Series, tone: 'lime' } },
+      { icon: 'plug-zap', label: 'Available stations', value: String(free.length), unit: `/ ${online.length}`, hint: `${freeConns} compatible connectors free now`, viz: { dots: online.map((st) => free.includes(st)) } },
+    ];
   }
+  function vizHTML(z, i) {
+    if (z.spark) return C.spark(z.spark, z.tone);
+    if (z.ring != null) return C.ring(z.ring, z.tone, `kpi-${i}-ring`);
+    if (z.meter != null) return `<div class="meter-tile"><i data-live="kpi-${i}-meter" style="width:${Math.min(100, z.meter).toFixed(1)}%"></i></div>`;
+    if (z.seg) { const t = sum(z.seg, (x) => x[1]) || 1; return `<div class="seg-tile" data-live="kpi-${i}-seg">${segHTML(z.seg, t)}</div>`; }
+    if (z.dots) return `<div class="dots-tile" data-live="kpi-${i}-dots">${dotsHTML(z.dots)}</div>`;
+    return '';
+  }
+  const segHTML = (seg, t) => seg.filter((x) => x[1]).map(([tone, n]) => `<i class="${tone}" style="flex:${n}" title="${n}"></i>`).join('');
+  const dotsHTML = (dots) => dots.map((on) => `<i class="${on ? 'on' : ''}"></i>`).join('');
+  function kpis() {
+    return kpiData().map((k, i) => `<div class="stat-card kpi ${k.tone || ''}" style="--i:${i}">
+      <div class="stat-top"><span class="stat-ic">${icon(k.icon)}</span><span class="stat-name">${esc(k.label)}</span></div>
+      <div class="kpi-mid"><div class="stat-num"><span data-live="kpi-${i}" data-tween>${k.value}</span>${k.unit ? `<small>${esc(k.unit)}</small>` : ''}</div><div class="kpi-viz">${vizHTML(k.viz, i)}</div></div>
+      <div class="stat-foot">${k.trend ? `<span class="trend ${k.trend.good === true ? 'good' : k.trend.good === false ? 'bad' : 'neutral'}">${icon(k.trend.dir === 'up' ? 'trending-up' : 'trending-down')}${esc(k.trend.text)}</span>` : ''}<span class="stat-hint" data-live="kpi-${i}-h">${esc(k.hint)}</span></div>
+    </div>`).join('');
+  }
+  function kpiLive(vals) {
+    kpiData().forEach((k, i) => {
+      vals[`kpi-${i}`] = k.value; vals[`kpi-${i}-h`] = k.hint; const z = k.viz;
+      if (z.ring != null) vals[`kpi-${i}-ring`] = { attr: { 'stroke-dasharray': `${Math.max(0, Math.min(100, z.ring)).toFixed(1)} 100` } };
+      if (z.meter != null) vals[`kpi-${i}-meter`] = { w: z.meter };
+      if (z.seg) vals[`kpi-${i}-seg`] = { html: segHTML(z.seg, 1) };
+      if (z.dots) vals[`kpi-${i}-dots`] = { html: dotsHTML(z.dots) };
+    });
+  }
+
+  // ---------------------------------------------------------------- live energy-flow hero
+  function flowNumbers() {
+    let net = 0, sessions = 0;
+    for (const st of VF.state.stations) for (const c of st.connectors) if (c.session) { net += c.session.kw; sessions++; }
+    const fl = VF.fleetLiveSessions(); const fleetKw = sum(fl, (x) => x.se.kw);
+    const ports = fleetPorts(); const freeConns = sum(VF.state.stations.filter((st) => st.status === 'online'), (st) => st.connectors.filter((c) => ports.includes(c.type) && c.status === 'Available').length);
+    const vs = F().vehicles;
+    return { net, sessions, fleetKw, fleetN: fl.length, freeConns, road: vs.filter((v) => v.status === 'in_use').length, ready: vs.filter((v) => v.status === 'available').length };
+  }
+  function flowSVG(n) {
+    // Grid → charging network → fleet → on the road. Particle count follows how many sessions are live.
+    const still = VF.motion && VF.motion.reduced();
+    const parts = (id, count, dur, cls) => (still ? '' : Array.from({ length: count }, (_, i) => `<circle class="fp ${cls}" r="${cls === 'big' ? 3.4 : 2.6}"><animateMotion dur="${dur}s" begin="${(-i * dur / count).toFixed(2)}s" repeatCount="indefinite" rotate="auto"><mpath href="#${id}"/></animateMotion></circle>`).join(''));
+    const netP = Math.max(2, Math.min(9, Math.round(n.sessions / 2))), fleetP = n.fleetN ? Math.min(7, n.fleetN * 2 + 1) : 0, roadP = n.road ? Math.min(6, Math.ceil(n.road / 2)) : 0;
+    const node = (x, ic, cls) => `<g class="fn ${cls}" transform="translate(${x},70)"><circle class="fn-halo" r="30"/><circle class="fn-core" r="22"/><g transform="translate(-10,-10)" class="fn-ic">${VF.icon(ic).replace('<svg ', '<svg width="20" height="20" ')}</g></g>`;
+    return `<svg class="flow" viewBox="0 0 640 140" role="img" aria-label="Live energy flow from the grid through the charging network to the fleet">
+      <defs><linearGradient id="fl-g" x1="0" x2="1"><stop offset="0" stop-color="#5EEAD4" stop-opacity=".15"/><stop offset=".5" stop-color="#5EEAD4" stop-opacity=".7"/><stop offset="1" stop-color="#A3E635" stop-opacity=".25"/></linearGradient></defs>
+      <path id="fl-a" class="fl-path" d="M70,70 C140,20 200,20 250,70"/><path id="fl-b" class="fl-path ${n.fleetN ? '' : 'idle'}" d="M290,70 C350,120 410,120 450,70"/><path id="fl-c" class="fl-path road ${n.road ? '' : 'idle'}" d="M490,70 C530,30 560,30 590,70"/>
+      ${parts('fl-a', netP, 2.6, 'big')}${parts('fl-b', fleetP, 2.2, '')}${parts('fl-c', roadP, 3.4, 'lime')}
+      ${node(50, 'zap', 'grid')}${node(270, 'plug-zap', 'net')}${node(470, 'car-front', 'fleet')}${node(610, 'route', 'road')}
+    </svg>`;
+  }
+  function liveHero() {
+    const n = flowNumbers(); const h = VF.hourOf(VF.now());
+    const greet = h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
+    const att = attention();
+    return `<section class="hero-live span-8 beam">
+        <div class="hl-grid" aria-hidden="true"></div>
+        <div class="hl-head"><div><span class="hl-live"><i></i>Live · ${esc(F().org.name)}</span><h2>${greet}, ${esc(me().name.split(' ')[0])}!</h2><p>Your mobility at a glance.</p></div>
+          ${att.length ? `<a class="hl-alert" href="#m-vehicles">${icon('triangle-alert')}<b>${att.length}</b> need attention</a>` : `<span class="hl-alert ok">${icon('circle-check')}All clear</span>`}</div>
+        ${flowSVG(n)}
+        <div class="hl-stats">
+          <div><span>Grid → network</span><b><span data-live="hl-net" data-tween>${fmt.n(n.net)}</span> kW</b><small><span data-live="hl-sess" data-tween>${n.sessions}</span> sessions on the network</small></div>
+          <div><span>Network → your fleet</span><b><span data-live="hl-fleet" data-tween>${fmt.n(n.fleetKw)}</span> kW</b><small><span data-live="hl-fleetn">${n.fleetN}</span> charging · <span data-live="hl-free">${n.freeConns}</span> connectors free</small></div>
+          <div><span>On the road</span><b><span data-live="hl-road" data-tween>${n.road}</span> vehicles</b><small><span data-live="hl-ready">${n.ready}</span> ready at depots</small></div>
+        </div>
+      </section>`;
+  }
+  function heroLive(vals) {
+    const n = flowNumbers();
+    Object.assign(vals, { 'hl-net': fmt.n(n.net), 'hl-sess': String(n.sessions), 'hl-fleet': fmt.n(n.fleetKw), 'hl-fleetn': String(n.fleetN), 'hl-free': String(n.freeConns), 'hl-road': String(n.road), 'hl-ready': String(n.ready) });
+  }
+  // Scrolling feed of what is happening right now.
+  function tickerHTML() {
+    const items = [];
+    for (const x of VF.fleetLiveSessions()) items.push(['mint', 'battery-charging', `${x.v.name} charging at ${x.st.name.split(' ').slice(0, 2).join(' ')} · ${fmt.kw(x.se.kw)}`]);
+    for (const v of F().vehicles.filter((x) => x.status === 'in_use' && x.trip).slice(0, 5)) items.push(['teal', 'route', `${v.name} → ${VF.PLACES[v.trip.dest] ? VF.PLACES[v.trip.dest].name : 'job'} · ${Math.round(v.soc)}%`]);
+    for (const nn of F().notices.slice(0, 5)) items.push([nn.sev === 'critical' ? 'bad' : nn.sev === 'warning' ? 'warn' : 'muted', nn.sev === 'info' ? 'info' : 'triangle-alert', nn.title]);
+    if (!items.length) return '';
+    const row = items.map(([t, ic, txt]) => `<span class="tk ${t}">${icon(ic)}${esc(txt)}</span>`).join('');
+    return `<div class="ticker" aria-label="Live activity"><span class="tk-label"><i></i>Live</span><div class="tk-viewport"><div class="tk-track" style="--dur:${Math.max(30, items.length * 6)}s">${row}<span class="tk-gap"></span>${row}</div></div></div>`;
+  }
+
   function attention() {
     const vs = F().vehicles; const items = [];
     vs.filter((v) => v.soc < 20 && v.status !== 'charging').forEach((v) => items.push(['battery-low', 'bad', `${v.name} at ${Math.round(v.soc)}%`, chargeLabel(v), v.id]));
@@ -131,12 +215,10 @@
     const order = { charging: 1, in_use: 0, waiting: 2, available: 3, offline: 4, maintenance: 5 };
     const list = vs.slice().sort((a, b) => (a.soc < 20) - (b.soc < 20) ? -1 : 0 || order[a.status] - order[b.status]).sort((a, b) => (b.soc < 20 && b.status !== 'charging') - (a.soc < 20 && a.status !== 'charging')).slice(0, 6);
     const counts = (s) => vs.filter((v) => v.status === s).length;
-    return `<section class="welcome">
-        <div class="welcome-text"><h2>${greet}, ${esc(me().name.split(' ')[0])}!</h2><p>Your mobility at a glance.</p>
-          <div class="welcome-chips"><span>${icon('route')}<b>${counts('in_use')}</b> on the road</span><span>${icon('battery-charging')}<b>${counts('charging')}</b> charging</span><span>${icon('circle-check')}<b>${counts('available')}</b> ready</span>${att.length ? `<span class="warn">${icon('triangle-alert')}<b>${att.length}</b> need attention</span>` : ''}</div></div>
-        ${welcomeArt()}
-      </section>
-      <section class="stat-grid" data-live="m-kpis">${kpis()}</section>
+    return `<div class="aurora" aria-hidden="true"><i></i><i></i><i></i></div>
+      <div class="bento-top">${liveHero()}<section class="span-4 hero-photo beam">${welcomeArt()}</section></div>
+      <div data-live="m-ticker">${tickerHTML()}</div>
+      <section class="stat-grid kpi-grid">${kpis()}</section>
       <div class="dash">
         ${C.card({ cls: 'span-8 flush', title: 'Vehicle overview', sub: 'Live status of your fleet', action: `<a class="btn small ghost" href="#m-vehicles">View all ${icon('arrow-right')}</a>` }, `<div class="vlist">${list.map(vehicleRow).join('')}</div>`)}
         <div class="span-4 stack">
@@ -403,7 +485,7 @@
       const vals = {};
       F().vehicles.forEach((v) => { vehicleLive(vals, v); vals[`v-${v.id}-odo`] = fmt.n(v.odo) + ' km'; vals[`v-${v.id}-temp`] = v.tempC != null ? fmt.n(v.tempC, 1) : '—'; });
       sessionLive(vals);
-      if (page === 'm-dashboard') { const avg = fleetAvg(); vals['m-wa-soc'] = Math.round(avg) + '%'; vals['m-wa-ring'] = { attr: { 'stroke-dasharray': `${avg.toFixed(1)} 100` } }; vals['m-kpis'] = { html: kpis() }; vals['m-donut'] = { html: statusDonut() }; VF.mgr.liveMap('m-dash-map'); }
+      if (page === 'm-dashboard') { const avg = fleetAvg(); vals['m-wa-soc'] = Math.round(avg) + '%'; vals['m-wa-ring'] = { attr: { 'stroke-dasharray': `${avg.toFixed(1)} 100` } }; kpiLive(vals); heroLive(vals); vals['m-donut'] = { html: statusDonut() }; VF.mgr.liveMap('m-dash-map'); }
       if (page === 'm-vehicle') VF.mgr.liveMap('m-veh-map');
       if (page === 'm-stations') VF.mgr.liveMap('m-st-map');
       if (VF.mgr.extraLive) VF.mgr.extraLive(page, vals);

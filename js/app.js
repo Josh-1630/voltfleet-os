@@ -147,7 +147,7 @@
           <button class="icon-btn sb-close" data-act="sb-close" aria-label="Close menu">${icon('x')}</button>
         </div>
         <div class="workspace" title="${esc(r === 'driver' ? VF.driverVehicle(u.driverId).model : app.roleLabel())}"><span class="ws-ic">${icon(r === 'manager' ? 'building-2' : r === 'driver' ? 'car-front' : r === 'operator' ? 'plug-zap' : r === 'admin' ? 'shield-check' : 'code')}</span><span class="ws-text"><span class="ws-label">${r === 'driver' ? 'My vehicle' : 'Workspace'}</span><strong>${esc(r === 'driver' ? VF.driverVehicle(u.driverId).model : app.roleLabel())}</strong></span></div>
-        <nav class="nav-links" id="nav-links"></nav>
+        <div class="nav-wrap"><span class="nav-ind" id="nav-ind" aria-hidden="true"></span><nav class="nav-links" id="nav-links"></nav></div>
         <div class="sb-foot">
           <button class="user-chip" data-act="acct-menu" aria-haspopup="menu" aria-label="Account menu"><span class="avatar sm">${initialsOf(u.name)}</span><span class="uc-text"><strong>${esc(u.name)}</strong><span class="small muted">${ROLE_NAME[r]}</span></span>${icon('chevrons-up-down', 'uc-chev')}</button>
           <button class="icon-btn sb-expand" data-act="sb-toggle" aria-label="Expand sidebar" data-tip="Expand" data-tip-pos="r">${icon('panel-left-open')}</button>
@@ -187,9 +187,20 @@
       html += `<a class="nav-link" href="#${n.id}" ${on === n.id ? 'aria-current="page"' : ''} data-tip="${esc(n.label)}" data-tip-pos="r">${icon(n.icon)}<span class="nl-text">${esc(n.label)}</span>${b ? `<span class="count">${b}</span>` : ''}</a>`;
     }
     VF.setHTML($('#nav-links'), html);
+    placeNavIndicator();
     const tb = $('#tabbar');
     if (tb) VF.setHTML(tb, app.nav.filter((n) => !n.hidden).map((n) => `<a class="tab" href="#${n.id}" ${on === n.id ? 'aria-current="page"' : ''}>${icon(n.icon)}<span>${esc(n.label)}</span></a>`).join(''));
     const bc = $('#bell-count'); if (bc) { const n = unreadCount(); bc.hidden = !n; bc.textContent = n > 99 ? '99+' : n; }
+  }
+  // A highlight that glides to the active page in the sidebar.
+  function placeNavIndicator() {
+    const ind = $('#nav-ind'); const a = document.querySelector('#nav-links .nav-link[aria-current="page"]');
+    if (!ind) return;
+    if (!a) { ind.style.opacity = '0'; return; }
+    const y = a.offsetTop, h = a.offsetHeight, x = a.offsetLeft, w = a.offsetWidth;
+    if (ind.dataset.y === String(y) && ind.dataset.w === String(w)) return;
+    ind.dataset.y = String(y); ind.dataset.w = String(w);
+    ind.style.cssText = `opacity:1;height:${h}px;width:${w}px;transform:translate(${x}px,${y}px)`;
   }
   function renderCrumbs(meta, title) {
     const r = current.role; const app = appFor(r);
@@ -309,7 +320,7 @@
         if (v.w != null) el.style.width = clamp(v.w, 0, 100).toFixed(1) + '%';
         if (v.attr) for (const a in v.attr) el.setAttribute(a, v.attr[a]);
         if (v.cls) el.setAttribute('class', v.cls);
-      } else if (el.textContent !== String(v)) el.textContent = v;
+      } else if (el.textContent !== String(v)) { if (VF.motion && el.hasAttribute('data-tween')) VF.motion.tween(el, String(v)); else el.textContent = v; }
     }
   }
 
@@ -350,7 +361,7 @@
     signin: (el) => signIn(el.dataset.id),
     'login-role': (el) => { loginUi.role = el.dataset.role; loginUi.error = ''; renderSignin(); },
     signout: () => { closePops(); VF.signOut(); },
-    'sb-toggle': () => { const on = !collapsed(); try { localStorage.setItem(SIDEBAR_KEY, on ? 'collapsed' : 'open'); } catch (e) { /* not kept */ } const c = $('#console'); if (c) c.classList.toggle('collapsed', on); setTimeout(drawCharts, 220); },
+    'sb-toggle': () => { setTimeout(placeNavIndicator, 260); const on = !collapsed(); try { localStorage.setItem(SIDEBAR_KEY, on ? 'collapsed' : 'open'); } catch (e) { /* not kept */ } const c = $('#console'); if (c) c.classList.toggle('collapsed', on); setTimeout(drawCharts, 220); },
     'sb-open': () => setDrawer(true),
     'sb-close': () => setDrawer(false),
     bell: () => openPop('notif'),

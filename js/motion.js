@@ -49,6 +49,40 @@
     });
   }
 
+  // Live numbers glide from the old value to the new one (elements marked data-tween).
+  const NUM = /^([^\d-]*)(-?\d[\d,]*(?:\.\d+)?)([\s\S]*)$/;
+  M.tween = (el, text) => {
+    const a = (el.textContent || '').match(NUM), b = text.match(NUM);
+    if (M.reduced() || !a || !b || a[1] !== b[1] || a[3] !== b[3]) { el.textContent = text; return; }
+    const from = parseFloat(a[2].replace(/,/g, '')), to = parseFloat(b[2].replace(/,/g, ''));
+    if (!isFinite(from) || !isFinite(to) || from === to) { el.textContent = text; return; }
+    const dec = (b[2].split('.')[1] || '').length, grouped = b[2].includes(',') || Math.abs(to) >= 1000;
+    const f = (x) => (grouped ? x.toLocaleString('en-GB', { minimumFractionDigits: dec, maximumFractionDigits: dec }) : x.toFixed(dec));
+    const t0 = performance.now(), dur = 650, token = (el._tw = (el._tw || 0) + 1);
+    el.classList.remove('tw-up', 'tw-down'); void el.offsetWidth; el.classList.add(to > from ? 'tw-up' : 'tw-down');
+    const step = (now) => {
+      if (el._tw !== token) return;
+      const t = Math.min(1, (now - t0) / dur);
+      el.textContent = t >= 1 ? text : b[1] + f(from + (to - from) * ease(t)) + b[3];
+      if (t < 1) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  };
+
+  // Spotlight: cards light up softly under the pointer.
+  let spotRaf = 0, spotEv = null;
+  document.addEventListener('pointermove', (e) => {
+    if (e.pointerType !== 'mouse') return;
+    spotEv = e; if (spotRaf) return;
+    spotRaf = requestAnimationFrame(() => {
+      spotRaf = 0; const ev = spotEv; if (!ev || M.reduced()) return;
+      const card = ev.target.closest && ev.target.closest('.card, .stat-card, .vcard, .st-item, .hero-live, .hero-photo, .qa');
+      if (!card) return;
+      const r = card.getBoundingClientRect();
+      card.style.setProperty('--mx', `${ev.clientX - r.left}px`); card.style.setProperty('--my', `${ev.clientY - r.top}px`);
+    });
+  }, { passive: true });
+
   // Dashboard hero: cycle through the fleet's cars.
   setInterval(() => {
     if (document.hidden || M.reduced()) return;

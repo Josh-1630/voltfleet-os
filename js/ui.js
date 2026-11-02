@@ -141,6 +141,20 @@
     return `<div class="donut-wrap"><svg class="donut" viewBox="0 0 140 140" role="img" aria-label="${esc(o.label || 'Breakdown')}"><circle class="d-track" cx="70" cy="70" r="${r}"/>${arcs}<text x="70" y="68" text-anchor="middle" class="d-val">${esc(o.value != null ? o.value : total)}</text><text x="70" y="86" text-anchor="middle" class="d-cap">${esc(o.caption || 'total')}</text></svg>
       <ul class="donut-legend">${segs.map((s) => `<li><i class="${s.tone}"></i><span>${esc(s.label)}</span><strong class="num">${s.value}</strong></li>`).join('')}</ul></div>`;
   };
+  // Sparkline for metric tiles: smooth line + soft area, draws itself on page entry.
+  let sparkId = 0;
+  C.spark = (vals, tone, o) => {
+    o = o || {}; const n = vals.length; if (n < 2) return '';
+    const W = 120, H = 36, max = Math.max(...vals), min = Math.min(...vals), span = max - min || 1;
+    const pts = vals.map((v, i) => [i / (n - 1) * W, H - 4 - (v - min) / span * (H - 10)]);
+    let d = `M${pts[0][0].toFixed(1)},${pts[0][1].toFixed(1)}`;
+    for (let i = 1; i < n; i++) { const [x0, y0] = pts[i - 1], [x1, y1] = pts[i]; const cx = (x0 + x1) / 2; d += `C${cx.toFixed(1)},${y0.toFixed(1)} ${cx.toFixed(1)},${y1.toFixed(1)} ${x1.toFixed(1)},${y1.toFixed(1)}`; }
+    const id = 'sg' + (++sparkId); const last = pts[n - 1];
+    return `<svg class="spark-tile ${tone || 'teal'}" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true"><defs><linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" class="sg-a"/><stop offset="1" class="sg-b"/></linearGradient></defs>
+      <path class="sp-area" d="${d}L${W},${H}L0,${H}Z" fill="url(#${id})"/><path class="sp-line" pathLength="1" d="${d}"/><circle class="sp-end" cx="${last[0].toFixed(1)}" cy="${last[1].toFixed(1)}" r="2.6"/></svg>`;
+  };
+  // Radial gauge (0–100) with an optional live hook on the arc.
+  C.ring = (pct, tone, live, label) => `<svg class="ring-tile ${tone || 'teal'}" viewBox="0 0 40 40" role="img" aria-label="${esc(label || Math.round(pct) + '%')}"><circle class="rg-track" cx="20" cy="20" r="16"/><circle class="rg-fill" cx="20" cy="20" r="16" pathLength="100" stroke-dasharray="${clamp(pct, 0, 100).toFixed(1)} 100"${live ? ` data-live="${live}"` : ''}/></svg>`;
   C.legend = (items) => `<div class="legend">${items.map(([label, tone]) => `<span><i class="${tone}"></i>${esc(label)}</span>`).join('')}</div>`;
 
   // ---------------------------------------------------------------- dialogs
