@@ -1290,6 +1290,26 @@ td .select { min-width: 160px; }
   .oc-wait { grid-template-columns: 22px minmax(0, 1fr); } .oc-wait .btn { grid-column: 1 / -1; }
 }
 
+
+/* install the app */
+.install-banner { display: grid; grid-template-columns: 40px minmax(0, 1fr) auto auto; gap: 12px; align-items: center; padding: 12px 12px 12px 14px; border-radius: var(--r); background: var(--surface); border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line)); box-shadow: var(--shadow-sm); }
+.install-banner img { border-radius: 10px; }
+.install-banner > div { display: flex; flex-direction: column; min-width: 0; }
+.install-signin { white-space: nowrap; }
+.install-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.install-steps li { display: grid; grid-template-columns: 28px minmax(0, 1fr) 22px; gap: 12px; align-items: center; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); }
+.install-steps li > div { display: flex; flex-direction: column; gap: 2px; }
+.install-steps li > svg { width: 20px; height: 20px; color: var(--accent); }
+.step-n { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: var(--accent); color: var(--accent-ink); font-weight: 650; font-size: 13px; }
+.install-qr { display: grid; grid-template-columns: 172px minmax(0, 1fr); gap: 18px; align-items: center; }
+.qr-box { width: 172px; height: 172px; padding: 8px; border-radius: 14px; background: #fff; border: 1px solid var(--line); display: grid; place-items: center; }
+.qr-box svg { width: 100%; height: 100%; }
+.install-qr code { overflow-wrap: anywhere; }
+.install-more summary { cursor: pointer; font-weight: 500; color: var(--accent); margin: 4px 0 8px; }
+.install-more h4 { display: flex; align-items: center; gap: 8px; margin: 8px 0 2px; font-size: 13.5px; } .install-more h4 svg { width: 16px; height: 16px; color: var(--accent); }
+@media (max-width: 720px) { .install-qr { grid-template-columns: minmax(0, 1fr); justify-items: center; text-align: center; } }
+@media (display-mode: standalone) { .install-banner, .install-signin { display: none; } }
+
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; }
 }

@@ -54,7 +54,7 @@
       </section>
       <section class="auth-panel">
         <div class="auth-card">
-          <div class="auth-head"><h2>Sign in</h2><p class="muted">Choose how you use VoltFleet.</p></div>
+          <div class="auth-head"><div class="row between"><h2>Sign in</h2><span data-install-slot="signin">${VF.install ? VF.install.slot('signin') : ''}</span></div><p class="muted">Choose how you use VoltFleet.</p></div>
           <div class="role-tabs" role="tablist" aria-label="Account type">${ROLES.map(([k, l, ic]) => `<button type="button" role="tab" aria-selected="${role === k}" data-act="login-role" data-role="${k}">${icon(ic)}<span>${l}</span></button>`).join('')}</div>
           <form id="login-form" class="auth-form" novalidate>
             <label class="field"><span>Email</span><input class="input lg" id="login-email" type="email" autocomplete="username" value="${esc(first ? first.u.email : '')}" required></label>
@@ -206,7 +206,7 @@
     const y = window.scrollY;
     const ae = document.activeElement; const fid = ae && ae.id && view.contains(ae) ? ae.id : null;
     let caret = null; try { caret = fid ? ae.selectionStart : null; } catch (e) { caret = null; }
-    try { view.innerHTML = app.pages[page](); }
+    try { view.innerHTML = (VF.install ? VF.install.banner() : '') + app.pages[page](); }
     catch (err) { console.error(err); view.innerHTML = VF.c.card({}, VF.c.empty({ icon: 'triangle-alert', title: 'This page could not load', text: 'Something went wrong while preparing it. Try again, or go back to the start page.', action: `<a class="btn primary" href="#${app.home}">Go to ${esc(navMeta(app.home).label)}</a>` })); }
     view._html = null;
     if (VF.maps) VF.maps.mountAll();
@@ -264,6 +264,7 @@
     VF.setHTML($('#acct-pop'), `<div class="pop-user"><span class="avatar">${initialsOf(u.name)}</span><span><strong>${esc(u.name)}</strong><span class="small muted">${esc(u.email || '')}</span><span class="small muted">${ROLE_NAME[r]}</span></span></div>
       <div class="pop-menu" role="menu">
         ${app.settingsHref ? `<a role="menuitem" href="${app.settingsHref}" data-act="pop-close-nav">${icon('settings')}Settings</a>` : ''}
+        ${VF.install && VF.install.available() ? `<button role="menuitem" data-act="install-app">${icon('smartphone')}Install app</button>` : ''}
         <button role="menuitemcheckbox" aria-checked="${dark}" data-act="theme-toggle">${icon(dark ? 'sun' : 'moon')}${dark ? 'Light mode' : 'Dark mode'}</button>
         <button role="menuitem" data-act="signout">${icon('arrow-left-right')}Switch account</button>
         <button role="menuitem" data-act="signout">${icon('log-out')}Sign out</button>
