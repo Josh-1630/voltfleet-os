@@ -59,7 +59,7 @@
   }
   function mapHTML(v, m, id) {
     const mi = mapInfo(v, m);
-    return VF.mapSVG({ id, vb: VF.fitBox(mi.fit, 60, 1.55), route: mi.active ? v.trip.pts : null, routeDone: mi.active ? donePts(v.trip) : null, stations: mi.stations, vehicle: { lat: mi.pos.lat, lon: mi.pos.lon, cls: v.status }, stationAct: 'd-station', label: 'Your route and chargers' });
+    return VF.mapSVG({ id, vb: VF.fitBox(mi.fit, 60, 1.55), route: mi.active ? v.trip.pts : null, routeDone: mi.active ? donePts(v.trip) : null, progress: mi.active ? v.trip.doneKm / Math.max(1e-6, v.trip.totalKm) : null, stations: mi.stations, vehicle: { lat: mi.pos.lat, lon: mi.pos.lon, cls: v.status }, stationAct: 'd-station', label: 'Your route and chargers' });
   }
   function mapLegend() {
     return `<div class="legend small"><span><i class="lg avail"></i>Free now</span><span><i class="lg busy"></i>Busy</span><span><i class="lg booked"></i>Your booking</span><span><i class="lg incompat"></i>Not compatible</span></div>`;
@@ -68,6 +68,7 @@
     const svg = document.getElementById(id); if (!svg) return;
     const active = v.trip && !v.trip.done;
     const pos = active ? VF.posAt(v.trip, v.trip.doneKm) : VF.PLACES[v.node];
+    if (VF.maps && VF.maps.has(id)) { VF.maps.moveMe(id, pos.lat, pos.lon, v.status, active ? v.trip.doneKm / Math.max(1e-6, v.trip.totalKm) : null, active ? donePts(v.trip) : null); return; }
     const [x, y] = VF.proj(pos.lat, pos.lon);
     const me = svg.querySelector('.me'); if (me) { me.setAttribute('transform', `translate(${x.toFixed(1)},${y.toFixed(1)})`); me.setAttribute('class', 'me ' + v.status); }
     const done = svg.querySelector('.route-done');

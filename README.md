@@ -29,7 +29,7 @@ Sample data is kept apart from the product code: `js/fleet.js` holds the fleet s
 
 ### Integrations that need configuration
 
-- **Street maps:** maps are a schematic of Greater Accra. To use a map provider, set `window.VOLTFLEET_MAPS = { provider, key }` in `js/config.js` with a browser key restricted to your domain, and render it where `VF.mapSVG` is called (`VF.mgr.fleetMap` for the EV Manager).
+- **Street maps:** maps use Leaflet with CARTO's light and dark street tiles (OpenStreetMap data, no key), and journey lines follow real roads through OSRM. Both are set in `window.VOLTFLEET_MAPS` in `js/config.js`. CARTO's free basemaps suit low-traffic and non-commercial use; for a commercial launch take a CARTO licence or switch `provider` to `maptiler` or `mapbox` with a public key restricted to your domain. The public OSRM server is for testing only: run your own OSRM, or set `routing: 'none'`. If tiles can't load (offline or blocked), the app falls back to the built-in schematic map.
 - **Vehicle telematics:** connect vehicles through VoltFleet Connect (carmaker login or OBD-II device); replace the simulation in `js/fleet.js`.
 - **Email notifications:** needs a server-side email provider. Keep its API key on the server, never in this web app.
 - **CO₂ factors:** `VF.CO2` in `js/fleet.js` uses approximate diesel and Ghana grid factors; replace them with audited figures before publishing.
@@ -68,6 +68,7 @@ No build step. Upload this folder to any static host:
 - `js/icons.js`: a subset of [Lucide](https://lucide.dev) icons (ISC licence, `js/vendor/lucide.LICENSE`)
 - `js/ui.js`: reusable components (metric cards, status badges, tables, charts, battery bars, dialogs, form fields) and the theme switch
 - `js/fleet.js`: EV Manager data layer and simulation (sample data)
+- `js/map.js`: street maps (Leaflet tiles, live markers, road routing, schematic fallback); `js/vendor/` holds the BSD-licensed Leaflet
 - `js/manager.js`, `js/manager-more.js`: the EV Manager pages
 - `js/driver.js`, `js/operator.js`, `js/admin.js`: the driver, operator and admin apps
 - `js/connect.js`: VoltFleet Connect (developer portal, consent flow, simulated API and webhooks)
@@ -82,4 +83,4 @@ No build step. Upload this folder to any static host:
 3. **VoltFleet Connect for real.** An OAuth 2.0 authorization server, a public REST API with rate limits, signed webhooks, and usage-based billing.
 4. **Vehicle data adapters.** Tesla Fleet API and a BYD partner/OBD-II path first, then an aggregator for Rivian and other makes. Each adapter outputs the unified vehicle record shown in Admin → Vehicles & OEMs.
 5. **Payments and messaging.** Mobile money and card payments for booking and no-show fees; SMS/push notifications.
-6. **Maps.** A real routing engine and live traffic, replacing the schematic Greater Accra network.
+6. **Maps.** Street maps are connected. Next: your own OSRM (or a commercial routing API with live traffic) and a licensed tile plan.

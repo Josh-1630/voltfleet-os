@@ -67,8 +67,9 @@
         <section class="panel"><div class="panel-head"><h2>Open alerts</h2><span class="faint small">all operators and platform</span></div><div>${open.length ? open.map((a) => VF.alertItem(a)).join('') : '<div class="empty">Nothing open.</div>'}</div></section>
       </div>`;
   }
-  function mapHTML() {
-    return VF.mapSVG({ stations: VF.state.stations.map((st) => ({ st, cls: stationCls(st), badge: st.connectors.filter((c) => c.status === 'Available').length, label: st.name.split(' ').slice(0, 2).join(' ') })), demand: demandZones(), label: 'Charging network' });
+  function mapHTML() { return VF.mapSVG(mapSpec()); }
+  function mapSpec() {
+    return ({ id: 'ad-map', stations: VF.state.stations.map((st) => ({ st, cls: stationCls(st), badge: st.connectors.filter((c) => c.status === 'Available').length, label: st.name.split(' ').slice(0, 2).join(' ') })), demand: demandZones(), label: 'Charging network' });
   }
   function opsRows() {
     return VF.state.operators.map((o) => {
@@ -218,7 +219,11 @@
     return page;
   }
   function live(page) {
-    if (page === 'ad-overview') return { 'ad-kpis': { html: kpis() }, 'ad-map': { html: mapHTML() }, 'ad-ops': { html: opsRows() } };
+    if (page === 'ad-overview') {
+      const vals = { 'ad-kpis': { html: kpis() }, 'ad-ops': { html: opsRows() } };
+      if (VF.maps && VF.maps.has('ad-map')) VF.maps.update('ad-map', mapSpec()); else vals['ad-map'] = { html: mapHTML() };
+      return vals;
+    }
     if (page === 'ad-system') return { 'ad-clock': VF.fmtDayTime(VF.now()), 'ad-sync': { html: syncRows() } };
     return null;
   }

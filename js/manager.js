@@ -43,10 +43,12 @@
   }
   VF.mgr.fleetMap = function (id, opts) {
     opts = opts || {};
-    const vehicles = F().vehicles.filter((v) => !opts.only || v.id === opts.only).map((v) => { const p = VF.fleetPos(v); return { id: v.id, lat: p.lat, lon: p.lon, cls: v.status, label: opts.labels === false ? '' : v.name.replace(/^(\w)\w*\s/, '$1'), title: `${v.name} · ${v.status.replace('_', ' ')} · ${Math.round(v.soc)}%`, act: 'm-open-vehicle' }; });
+    const vehicles = F().vehicles.filter((v) => !opts.only || v.id === opts.only).map((v) => { const p = VF.fleetPos(v); return { id: v.id, lat: p.lat, lon: p.lon, progress: opts.route && opts.only && v.trip ? tripProgress(v) : null, cls: v.status, label: opts.labels === false ? '' : v.name.replace(/^(\w)\w*\s/, '$1'), title: `${v.name} · ${v.status.replace('_', ' ')} · ${Math.round(v.soc)}%`, act: 'm-open-vehicle' }; });
     return VF.mapSVG({ id, vb: opts.vb, stations: VF.state.stations.map((st) => ({ st, cls: stationClass(st), label: st.name.split(' ').slice(0, 2).join(' ').replace(/&$/, '') })), vehicles, route: opts.route, stationAct: opts.stationAct, label: 'Fleet and charging stations' });
   };
+  const tripProgress = (v) => (v.trip && v.trip.totalKm ? v.trip.doneKm / v.trip.totalKm : null);
   VF.mgr.liveMap = function (id) {
+    if (VF.maps && VF.maps.has(id)) { for (const v of F().vehicles) { const p = VF.fleetPos(v); VF.maps.moveVehicle(id, v.id, p.lat, p.lon, v.status, tripProgress(v)); } return; }
     const svg = document.getElementById(id); if (!svg) return;
     for (const g of svg.querySelectorAll('.fv[data-id]')) {
       const v = VF.fleetVehicle(g.dataset.id); if (!v) continue;
@@ -54,7 +56,7 @@
       g.setAttribute('transform', `translate(${x.toFixed(1)},${y.toFixed(1)})`); g.setAttribute('class', 'fv ' + v.status);
     }
   };
-  VF.mgr.mapNote = () => `<div class="map-note">${icon('info')}<span>Schematic map of Greater Accra. Connect a map provider in <a href="#m-settings">Settings → Integrations</a> for street-level maps.</span></div>`;
+  VF.mgr.mapNote = () => (VF.maps && VF.maps.enabled() ? `<div class="map-note">${icon('info')}<span>Street map by ${esc(VF.maps.providerName())}. Vehicle positions are sample data until telematics are connected${VF.maps.routing() ? '; routes follow real roads' : ''}. Click the map to zoom with the scroll wheel.</span></div>` : `<div class="map-note">${icon('info')}<span>Schematic map of Greater Accra. Connect a map provider in <a href="#m-settings">Settings → Integrations</a> for street-level maps.</span></div>`);
   const mapLegend = () => C.legend([['In use', 'teal'], ['Charging', 'mint'], ['Available', 'ok'], ['Needs attention', 'warn'], ['Station free', 'ok-sq'], ['Station busy', 'warn-sq']]);
 
   // ---------------------------------------------------------------- dashboard

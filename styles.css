@@ -1196,6 +1196,50 @@ td .select { min-width: 160px; }
   .plan-stats { grid-template-columns: minmax(0, 1fr); }
 }
 
+
+/* ======================================================================
+   Street maps (Leaflet, js/map.js)
+   ====================================================================== */
+.lmap { width: 100%; aspect-ratio: 16 / 10; min-height: 260px; max-height: 500px; isolation: isolate; z-index: 0; }
+.lmap.leaflet-container { background: var(--surface-3); font: 12px/1.4 var(--font); }
+.map-wrap:has(.lmap) { background: var(--surface-3); }
+.leaflet-container a { color: var(--accent); }
+.leaflet-bar { border: 1px solid var(--line) !important; border-radius: 10px !important; box-shadow: var(--shadow-sm) !important; overflow: hidden; }
+.leaflet-bar a, .leaflet-bar a:hover { background: var(--surface); color: var(--ink); border-bottom-color: var(--line); width: 32px; height: 32px; line-height: 32px; font: 500 18px/32px var(--font); }
+.leaflet-bar a:hover { background: var(--surface-3); }
+.leaflet-bar a.leaflet-disabled { color: var(--faint); background: var(--surface-2); }
+.leaflet-control-attribution { background: color-mix(in srgb, var(--surface) 85%, transparent) !important; color: var(--muted); font-size: 10.5px; border-radius: 6px 0 0 0; }
+.leaflet-control-attribution a { color: var(--muted); }
+.lm-icon { background: none; border: 0; }
+.lm-route { stroke: var(--accent); stroke-width: 6; stroke-opacity: .35; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.lm-route-done { stroke: var(--accent); stroke-width: 6; stroke-opacity: .95; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.lm-stn { position: relative; width: 24px; height: 24px; }
+.lm-sq { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 7px; background: var(--surface); border: 2px solid var(--line-strong); box-shadow: 0 1px 3px rgba(15, 23, 42, .25); box-sizing: border-box; }
+.lm-sq svg { width: 18px; height: 18px; fill: var(--faint); }
+.lm-stn.avail .lm-sq { background: var(--ok); border-color: #fff; } .lm-stn.busy .lm-sq { background: var(--amber); border-color: #fff; }
+.lm-stn.booked .lm-sq, .lm-stn.sel .lm-sq { background: var(--accent); border-color: var(--mint); border-width: 3px; }
+.lm-stn.fault .lm-sq { background: var(--bad); border-color: #fff; } .lm-stn.off .lm-sq { background: var(--faint); border-color: #fff; }
+.lm-stn.avail svg, .lm-stn.busy svg, .lm-stn.booked svg, .lm-stn.sel svg, .lm-stn.fault svg, .lm-stn.off svg { fill: #fff; }
+.lm-stn.incompat, .lm-stn.dim { opacity: .6; }
+.lm-lab { position: absolute; top: 27px; left: 50%; transform: translateX(-50%); white-space: nowrap; font: 600 11.5px var(--font); color: var(--ink); text-shadow: 0 0 3px var(--surface), 0 0 3px var(--surface), 0 0 2px var(--surface); pointer-events: none; }
+.lm-stn.sel .lm-lab { color: var(--accent); }
+.lm-badge { position: absolute; top: -8px; right: -9px; min-width: 16px; height: 16px; padding: 0 3px; border-radius: 99px; background: var(--ink); color: var(--surface); font: 600 10px/16px var(--font); text-align: center; }
+.lm-fv { position: relative; width: 18px; height: 18px; }
+.lm-fv i { position: absolute; inset: 2px; border-radius: 50%; background: var(--accent); border: 2.5px solid #fff; box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 22%, transparent), 0 1px 3px rgba(15, 23, 42, .3); box-sizing: border-box; }
+.lm-fv.charging i, .lm-fv.waiting i { background: var(--charge); box-shadow: 0 0 0 4px color-mix(in srgb, var(--mint) 40%, transparent), 0 1px 3px rgba(15, 23, 42, .3); }
+.lm-fv.available i { background: var(--ok); box-shadow: 0 0 0 4px color-mix(in srgb, var(--ok) 22%, transparent), 0 1px 3px rgba(15, 23, 42, .3); }
+.lm-fv.maintenance i { background: var(--amber); box-shadow: 0 0 0 4px color-mix(in srgb, var(--amber) 25%, transparent), 0 1px 3px rgba(15, 23, 42, .3); }
+.lm-fv.offline i { background: var(--faint); box-shadow: 0 1px 3px rgba(15, 23, 42, .3); }
+.lm-fv span { position: absolute; left: 17px; top: -12px; white-space: nowrap; font: 600 11px var(--font); color: var(--ink); text-shadow: 0 0 3px var(--surface), 0 0 3px var(--surface), 0 0 2px var(--surface); pointer-events: none; }
+.leaflet-marker-icon:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 8px; }
+.lm-me { position: relative; width: 22px; height: 22px; }
+.lm-me .dot { position: absolute; inset: 2px; border-radius: 50%; background: var(--accent); border: 3px solid #fff; box-shadow: 0 1px 4px rgba(15, 23, 42, .35); box-sizing: border-box; }
+.lm-me.charging .dot, .lm-me.waiting .dot { background: var(--charge); } .lm-me.stranded .dot { background: var(--bad); }
+.lm-me .pulse { position: absolute; inset: -8px; border-radius: 50%; background: var(--accent); opacity: .18; animation: lm-pulse 2s ease-out infinite; }
+@keyframes lm-pulse { from { transform: scale(.5); opacity: .35; } to { transform: scale(1.4); opacity: 0; } }
+.lm-demand { width: 100%; height: 100%; border-radius: 50%; display: grid; place-items: center; background: color-mix(in srgb, var(--accent) 16%, transparent); border: 1.5px solid var(--accent); color: var(--accent); font: 600 12px var(--font); box-sizing: border-box; }
+@media (max-width: 720px) { .lmap { aspect-ratio: 4 / 3; min-height: 240px; } .lm-lab { font-size: 10.5px; } }
+
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; }
 }
