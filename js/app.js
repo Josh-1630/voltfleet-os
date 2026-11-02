@@ -210,6 +210,7 @@
     catch (err) { console.error(err); view.innerHTML = VF.c.card({}, VF.c.empty({ icon: 'triangle-alert', title: 'This page could not load', text: 'Something went wrong while preparing it. Try again, or go back to the start page.', action: `<a class="btn primary" href="#${app.home}">Go to ${esc(navMeta(app.home).label)}</a>` })); }
     view._html = null;
     if (VF.maps) VF.maps.mountAll();
+    if (!keep && VF.motion) VF.motion.enter(view);
     const title = (app.title && app.title(page)) || meta.title;
     document.title = `${meta.title} · VoltFleet ${PRODUCT[current.role]}`;
     $('#view-title').textContent = title;

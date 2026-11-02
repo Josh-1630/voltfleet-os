@@ -181,7 +181,7 @@
     const p = v.loc; const vb = p ? VF.fitBox([[p.lat, p.lon]], 240, 1.6) : null;
     const sb = (l, val) => `<div class="sb"><span class="stat-label">${l}</span><span class="stat-value">${val}</span></div>`;
     return `<div class="detail-head card">
-        <div class="dh-art">${C.vehicleArt(VF.vehicleKind(v.model))}</div>
+        <div class="dh-art">${C.vehicleImg(v.model, 'cover')}</div>
         <div class="dh-main"><div class="row">${C.badge(v.status)}<span class="badge teal live-badge">${icon('radio-tower')}Live · Smartcar</span></div><h2>${esc(v.name)}</h2><p class="muted">${esc(v.make)} ${esc(v.modelName)}${v.year ? ' · ' + v.year : ''}${v.vin ? ` · VIN <span class="mono">${esc(VF.mask.vin(v.vin))}</span>` : ''}</p></div>
         <div class="dh-stats">${sb('Battery', v.socKnown ? Math.round(v.soc) + '%' : '—')}${sb('Range', v.rangeKm != null ? fmt.km(v.rangeKm) : '—')}${sb('Charging', esc(charging))}${sb('Odometer', s.odometerKm != null ? fmt.n(s.odometerKm) + ' km' : '—')}</div>
       </div>

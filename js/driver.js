@@ -238,7 +238,7 @@
     const compatCount = VF.state.stations.filter((st) => st.connectors.some((c) => VF.compatible(m, c.type))).length;
     const connected = d.consents.telematics;
     return `<div class="dash">
-      ${card('span-6', esc(v.model), `<span class="oem-badge">${esc(m.oem)}</span>`, `<p class="muted small">${esc(m.spec)} · ${esc(v.plate || '—')} · VIN ${esc(v.vin || '—')}</p><div class="stats-3">${stat('Battery', m.kwh + ' kWh')}${stat('Max DC', m.dc + ' kW')}${stat('Max AC', m.ac + ' kW')}</div>`)}
+      ${card('span-6', esc(v.model), `<span class="oem-badge">${esc(m.oem)}</span>`, `${VF.c && VF.c.vehicleImg ? `<div class="d-vphoto">${VF.c.vehicleImg(v.model, 'cover')}</div>` : ''}<p class="muted small">${esc(m.spec)} · ${esc(v.plate || '—')} · VIN ${esc(v.vin || '—')}</p><div class="stats-3">${stat('Battery', m.kwh + ' kWh')}${stat('Max DC', m.dc + ' kW')}${stat('Max AC', m.ac + ' kW')}</div>`)}
       ${card('span-6', 'Connection', connected ? pill('ok', 'Connected') : pill('warn', 'Off'), `<dl class="dl"><dt>Method</dt><dd>${esc(o.method)}</dd><dt>Sign-in</dt><dd>${esc(o.auth)}</dd><dt>Linked</dt><dd>${VF.fmtDate(v.linked.at)}</dd></dl>
         <p class="faint small">VoltFleet reads battery, range, charging state, odometer and diagnostics. Location is used on this phone for routing and arrival time, and is never sent to stations or shown to staff.</p>
         <div class="card-actions"><button class="btn ${connected ? 'danger' : 'primary'}" data-act="d-consent" data-k="telematics" data-v="${connected ? 0 : 1}">${connected ? 'Disconnect vehicle' : 'Reconnect vehicle'}</button></div>`)}

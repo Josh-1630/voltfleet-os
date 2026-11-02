@@ -25,7 +25,7 @@
   }
   function vehicleRow(v) {
     return `<div class="vrow" data-act="m-open-vehicle" data-id="${v.id}" role="button" tabindex="0">
-      <div class="vrow-art">${C.vehicleArt(VF.vehicleKind(v.model))}</div>
+      <div class="vrow-art">${C.vehicleImg(v.model, 'thumb')}</div>
       <div class="vrow-main"><strong>${esc(v.name)}</strong><span class="muted small">${esc(v.model)} · ${v.real ? '<span class="live-chip">Live</span>' : `<span class="mono">${esc(v.plate)}</span>`}</span></div>
       <div class="vrow-batt">${C.battery(v.soc, { charging: v.status === 'charging', live: `v-${v.id}-w`, liveText: `v-${v.id}-soc` })}<span class="small muted"><span data-live="v-${v.id}-range">${fmt.km(VF.fleetRange(v))}</span> range</span></div>
       <div class="vrow-status">${C.badge(v.status)}<span class="small muted" data-live="v-${v.id}-chg">${esc(chargeLabel(v))}</span></div>
@@ -112,8 +112,17 @@
   function sessionLive(vals) {
     for (const x of VF.fleetLiveSessions()) { vals[`s-${x.se.id}-dur`] = fmt.dur((VF.now() - x.se.start) / MIN); vals[`s-${x.se.id}-kwh`] = fmt.kwh(x.se.kwh); vals[`s-${x.se.id}-cost`] = money(x.se.cost); vals[`s-${x.se.id}-kw`] = fmt.kw(x.se.kw); vals[`s-${x.se.id}-w`] = { w: x.se.soc }; vals[`s-${x.se.id}-soc`] = Math.round(x.se.soc) + '%'; }
   }
+  // Hero: a slideshow of the fleet's real models and an animated fleet-charge gauge.
+  const fleetAvg = () => { const vs = F().vehicles; return vs.length ? sum(vs, (v) => v.soc) / vs.length : 0; };
   function welcomeArt() {
-    return `<div class="welcome-art" aria-hidden="true"><span class="wa-ring"></span>${C.vehicleArt('suv', 'wa-car')}<span class="wa-plug">${icon('zap')}</span></div>`;
+    const count = {}; F().vehicles.forEach((v) => { count[v.model] = (count[v.model] || 0) + 1; });
+    const models = Object.keys(count).sort((a, b) => count[b] - count[a]).slice(0, 6);
+    const avg = fleetAvg();
+    return `<div class="welcome-art" aria-hidden="true">
+      <div class="wa-photo" data-slides>${models.map((m, i) => `<figure class="wa-slide${i === ((VF.motion ? VF.motion.slide : 0) % models.length) ? ' on' : ''}">${C.vehicleImg(m, 'cover')}<figcaption>${esc(m)} · ${count[m]} in fleet</figcaption></figure>`).join('')}<span class="wa-shine"></span></div>
+      <div class="wa-gauge"><svg viewBox="0 0 44 44"><circle class="wa-g-track" cx="22" cy="22" r="18"/><circle class="wa-g-fill" data-live="m-wa-ring" cx="22" cy="22" r="18" pathLength="100" stroke-dasharray="${avg.toFixed(1)} 100"/></svg><span><b data-live="m-wa-soc">${Math.round(avg)}%</b><small>fleet charge</small></span></div>
+      <span class="wa-bolt">${icon('zap')}</span>
+    </div>`;
   }
   function pageDashboard() {
     const f = F(); const vs = f.vehicles; const h = VF.hourOf(VF.now());
@@ -178,7 +187,7 @@
     return `<article class="vcard">
       <button class="vcard-hit" data-act="m-open-vehicle" data-id="${v.id}" aria-label="Open ${esc(v.name)}"></button>
       <div class="vcard-top">${C.badge(v.status)}${v.real ? '<span class="live-chip">Live · Smartcar</span>' : `<span class="mono small muted">${esc(v.plate)}</span>`}</div>
-      <div class="vcard-art">${C.vehicleArt(VF.vehicleKind(v.model))}</div>
+      <div class="vcard-art">${C.vehicleImg(v.model, 'cover')}</div>
       <h3>${esc(v.name)}</h3><p class="small muted">${esc(v.model)} · ${v.year}</p>
       ${C.battery(v.soc, { charging: v.status === 'charging', live: `v-${v.id}-w`, liveText: `v-${v.id}-soc` })}
       <dl class="vcard-dl"><div><dt>Range</dt><dd data-live="v-${v.id}-range">${fmt.km(VF.fleetRange(v))}</dd></div><div><dt>Driver</dt><dd>${esc(dname(v.driverId))}</dd></div><div class="full"><dt>Location</dt><dd data-live="v-${v.id}-loc">${esc(VF.fleetPlace(v))}</dd></div></dl>
@@ -195,7 +204,7 @@
       ${!list.length ? C.card({}, C.empty({ icon: 'car-front', title: 'No vehicles match', text: 'Try another status or clear the search.', action: `<button class="btn" data-act="m-vclear">Clear filters</button>` }))
         : ui.vview === 'grid' ? `<div class="vgrid">${list.map(vehicleCard).join('')}</div>`
           : C.card({ cls: 'flush' }, C.table([
-            { label: 'Vehicle', render: (v) => `<div class="cell-vehicle">${C.vehicleArt(VF.vehicleKind(v.model), 'mini')}<div><strong>${esc(v.name)}</strong><div class="small muted">${esc(v.model)} · ${v.year}</div></div></div>` },
+            { label: 'Vehicle', render: (v) => `<div class="cell-vehicle">${C.vehicleImg(v.model, 'mini')}<div><strong>${esc(v.name)}</strong><div class="small muted">${esc(v.model)} · ${v.year}</div></div></div>` },
             { label: 'Plate', render: (v) => `<span class="mono">${esc(v.plate)}</span>` },
             { label: 'Status', render: (v) => C.badge(v.status) },
             { label: 'Battery', render: (v) => C.battery(v.soc, { charging: v.status === 'charging', live: `v-${v.id}-w`, liveText: `v-${v.id}-soc`, size: 'sm' }) },
@@ -213,7 +222,7 @@
     if (v.real) return VF.real.page(v);
     const tab = ui.vtab;
     return `<div class="detail-head card">
-        <div class="dh-art">${C.vehicleArt(VF.vehicleKind(v.model))}</div>
+        <div class="dh-art">${C.vehicleImg(v.model, 'cover')}</div>
         <div class="dh-main"><div class="row">${C.badge(v.status)}<span class="mono small muted">${esc(v.plate)}</span></div><h2>${esc(v.name)}</h2><p class="muted">${esc(v.model)} · ${v.year} · ${esc(F().depots.find((d) => d.id === v.depot).name)}</p></div>
         <div class="dh-stats">${statBlock('Battery', `<span data-live="v-${v.id}-soc">${Math.round(v.soc)}%</span>`)}${statBlock('Range', `<span data-live="v-${v.id}-range">${fmt.km(VF.fleetRange(v))}</span>`)}${statBlock('Battery health', v.soh + '%')}${statBlock('Odometer', `<span data-live="v-${v.id}-odo">${fmt.n(v.odo)} km</span>`)}</div>
       </div>
@@ -394,7 +403,7 @@
       const vals = {};
       F().vehicles.forEach((v) => { vehicleLive(vals, v); vals[`v-${v.id}-odo`] = fmt.n(v.odo) + ' km'; vals[`v-${v.id}-temp`] = v.tempC != null ? fmt.n(v.tempC, 1) : '—'; });
       sessionLive(vals);
-      if (page === 'm-dashboard') { vals['m-kpis'] = { html: kpis() }; vals['m-donut'] = { html: statusDonut() }; VF.mgr.liveMap('m-dash-map'); }
+      if (page === 'm-dashboard') { const avg = fleetAvg(); vals['m-wa-soc'] = Math.round(avg) + '%'; vals['m-wa-ring'] = { attr: { 'stroke-dasharray': `${avg.toFixed(1)} 100` } }; vals['m-kpis'] = { html: kpis() }; vals['m-donut'] = { html: statusDonut() }; VF.mgr.liveMap('m-dash-map'); }
       if (page === 'm-vehicle') VF.mgr.liveMap('m-veh-map');
       if (page === 'm-stations') VF.mgr.liveMap('m-st-map');
       if (VF.mgr.extraLive) VF.mgr.extraLive(page, vals);

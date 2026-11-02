@@ -92,7 +92,7 @@
     for (const se of series) {
       const pts = data.map((d, i) => `${x(i).toFixed(1)},${y(d.values[se.key] || 0).toFixed(1)}`);
       if (se.area) s += `<path class="c-area ${se.tone}" d="M${x(0).toFixed(1)},${y(lo).toFixed(1)}L${pts.join('L')}L${x(n - 1).toFixed(1)},${y(lo).toFixed(1)}Z"/>`;
-      s += `<path class="c-line ${se.tone}${se.dash ? ' dash' : ''}" d="M${pts.join('L')}"/>`;
+      s += `<path class="c-line ${se.tone}${se.dash ? ' dash' : ''}"${se.dash ? '' : ' pathLength="1"'} d="M${pts.join('L')}"/>`;
       const last = data[n - 1].values[se.key] || 0;
       s += `<circle class="c-end ${se.tone}" cx="${x(n - 1).toFixed(1)}" cy="${y(last).toFixed(1)}" r="4"/>`;
     }
@@ -119,7 +119,7 @@
       const bx = L + i * bw + bw * 0.18, ww = Math.max(2, bw * 0.64); let base = 0;
       for (const se of series) {
         const v = d.values[se.key] || 0; if (v <= 0) continue;
-        s += `<rect class="c-bar ${se.tone}" x="${bx.toFixed(1)}" y="${y(base + v).toFixed(1)}" width="${ww.toFixed(1)}" height="${Math.max(0, y(base) - y(base + v)).toFixed(1)}" rx="3"><title>${esc(d.label)} · ${esc(se.label)}: ${o.vFmt ? o.vFmt(v) : fmt.n(v, 1)}</title></rect>`;
+        s += `<rect class="c-bar ${se.tone}" style="--i:${i}" x="${bx.toFixed(1)}" y="${y(base + v).toFixed(1)}" width="${ww.toFixed(1)}" height="${Math.max(0, y(base) - y(base + v)).toFixed(1)}" rx="3"><title>${esc(d.label)} · ${esc(se.label)}: ${o.vFmt ? o.vFmt(v) : fmt.n(v, 1)}</title></rect>`;
         base += v;
       }
       if ((n - 1 - i) % every === 0) s += `<text x="${(bx + ww / 2).toFixed(1)}" y="${h - 8}" text-anchor="middle">${esc(d.label)}</text>`;

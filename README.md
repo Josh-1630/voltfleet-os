@@ -77,6 +77,8 @@ No build step. Upload this folder to any static host:
 - `js/fleet.js`: EV Manager data layer and simulation (sample data)
 - `js/ocpp.js`, `js/ocpp-sim.js`: Real chargers page in the operator console, and the simulated OCPP 1.6J charger; `tools/ocpp-charger-sim.mjs`: the same simulator from a terminal
 - `supabase/functions/ocpp/`: the OCPP 1.6J central system (`csms.ts` protocol, `server.ts` WebSocket and management API, `index.ts` Postgres store)
+- `js/photos.js`: real vehicle photos (lead image of each model's Wikipedia article, free licences only, credited in Settings → Data & privacy)
+- `js/motion.js`: page transitions, count-up numbers, chart animations and the dashboard slideshow (Settings → Appearance → Motion)
 - `js/smartcar.js`: live vehicles through Smartcar (connect, poll, charge commands, live vehicle page)
 - `supabase/functions/smartcar/`: the Smartcar Edge Function; `supabase/migrations/`: its private tables
 - `docs/market-scan.md`: vehicle data APIs, XCharge and other charger and charging-software vendors

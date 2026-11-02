@@ -318,6 +318,7 @@
     else if (t === 'appearance') {
       const th = VF.theme.get();
       body = C.card({ title: 'Theme', sub: 'Light is the default. Your choice is kept on this device.' }, `<div class="theme-pick">${[['light', 'Light', 'sun'], ['dark', 'Dark', 'moon']].map(([k, l, ic]) => `<button type="button" class="theme-opt ${k}" data-act="m-theme" data-k="${k}" aria-pressed="${th === k}"><span class="theme-preview"><i></i><i></i><i></i></span><span class="row">${icon(ic)}${l}</span></button>`).join('')}</div>`)
+        + C.card({ title: 'Motion', sub: 'Page transitions, counting numbers, animated charts and the car slideshow.' }, C.seg([['full', 'Full motion', 'sparkles'], ['reduced', 'Reduced', 'pause']], VF.motion ? VF.motion.get() : 'full', 'motion-set') + '<p class="small muted">Your device’s “reduce motion” setting is always respected.</p>')
         + C.card({ title: 'Install on this device', sub: VF.install && VF.install.installed ? 'VoltFleet is installed here.' : 'Open VoltFleet full screen from your home screen, like any other app. No app store needed.' }, VF.install && !VF.install.installed ? `<div class="card-actions">${VF.install.button('primary')}</div>` : `<p class="small muted">${icon('circle-check')} Installed.</p>`)
         + C.card({ title: 'Units and currency' }, `<dl class="dl"><dt>Distance</dt><dd>Kilometres</dd><dt>Energy</dt><dd>Kilowatt-hours (kWh)</dd><dt>Currency</dt><dd>${esc(VF.state.settings.currency)} · set by the platform for Ghana</dd><dt>Time zone</dt><dd>Africa/Accra (GMT)</dd></dl>`);
     } else if (t === 'organisation') body = C.card({ title: 'Organisation' }, `<form id="m-org-form" class="form-grid-2" novalidate>${C.field('Company name', C.input('org', f.org.name, 'required maxlength="60"'))}<div class="form-error" id="m-org-error" hidden></div><div class="card-actions span-all"><button class="btn primary" type="submit">Save</button></div></form>`)
@@ -343,6 +344,7 @@
         <li>${icon('check')}<span>Driver names, licence numbers and work phones for dispatch. Phones are masked on screen.</span></li>
         <li>${icon('check')}<span>Charging sessions are shared with the station’s operator under the company name, never a driver’s name.</span></li>
         <li>${icon('check')}<span>Tell drivers how vehicle location is used and keep it to working hours, in line with Ghana’s Data Protection Act 2012 (Act 843).</span></li></ul>`)
+      + C.card({ title: 'Photo credits', sub: 'Vehicle photos' }, VF.photos ? VF.photos.creditsHTML(f.vehicles.map((v) => v.model)) : '')
       + C.card({ title: 'Export' }, `<p class="small muted">Download all fleet data held for ${esc(f.org.name)} as JSON.</p><button class="btn" data-act="m-export">${icon('download')}Export fleet data</button>`)
       + C.card({ cls: 'danger-zone', title: 'Reset sample data' }, `<p class="small muted">Replaces the fleet with fresh sample vehicles, drivers and history. This changes the shared demo for everyone.</p><button class="btn danger" data-act="m-reset-fleet">${icon('rotate-ccw')}Reset fleet data</button>`);
     return `<div class="settings">

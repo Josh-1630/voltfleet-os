@@ -1310,6 +1310,121 @@ td .select { min-width: 160px; }
 @media (max-width: 720px) { .install-qr { grid-template-columns: minmax(0, 1fr); justify-items: center; text-align: center; } }
 @media (display-mode: standalone) { .install-banner, .install-signin { display: none; } }
 
+
+/* ======================================================================
+   Real vehicle photos (js/photos.js)
+   ====================================================================== */
+.vphoto { position: relative; display: block; overflow: hidden; border-radius: 12px; background: linear-gradient(135deg, var(--accent-soft), var(--surface-3)); aspect-ratio: 16 / 10; }
+.vphoto img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: center 60%; transition: transform .5s cubic-bezier(.2,.7,.2,1); }
+.vphoto .fallback { display: none; }
+.vphoto.art { display: grid; place-items: center; padding: 6px 10px 0; }
+.vphoto.art .vehicle-art { display: block; }
+.vphoto.failed img { display: none; } .vphoto.failed .fallback { display: block; }
+.vphoto.thumb { width: 76px; border-radius: 10px; }
+.vphoto.mini { width: 64px; border-radius: 8px; flex: none; }
+.vrow-art .vphoto { width: 76px; }
+.vcard-art { padding: 0; background: none; border-radius: 12px; }
+.vcard-art .vphoto.cover { border-radius: 12px; }
+.vcard:hover .vphoto img { transform: scale(1.05); }
+.dh-art { padding: 0; background: none; }
+.dh-art .vphoto { border-radius: 14px; }
+.d-vphoto { margin: -2px 0 10px; } .d-vphoto .vphoto { border-radius: 12px; max-height: 220px; }
+.credits { list-style: none; margin: 0 0 8px; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.credits li { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 12px; align-items: center; }
+.credits li > div { display: flex; flex-direction: column; min-width: 0; }
+.credits .small { overflow-wrap: anywhere; }
+
+/* dashboard hero */
+.welcome-art { position: relative; width: 300px; flex: none; display: block; }
+.wa-photo { position: relative; width: 100%; height: auto; aspect-ratio: 16 / 10; border-radius: 16px; overflow: hidden; box-shadow: var(--shadow); background: var(--surface-3); }
+.wa-slide { position: absolute; inset: 0; margin: 0; opacity: 0; transition: opacity 1s ease; }
+.wa-slide.on { opacity: 1; }
+.wa-slide .vphoto { position: absolute; inset: 0; border-radius: 0; aspect-ratio: auto; }
+.wa-slide.on .vphoto img { animation: kenburns 6s ease-out both; }
+.wa-slide figcaption { position: absolute; right: 10px; bottom: 10px; max-width: calc(100% - 130px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 4px 10px; border-radius: 99px; background: rgba(15, 23, 42, .62); color: #fff; font-size: 11.5px; font-weight: 500; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+.wa-shine { position: absolute; inset: 0; background: linear-gradient(115deg, transparent 35%, rgba(255,255,255,.28) 50%, transparent 65%); transform: translateX(-120%); animation: shine 5.5s ease-in-out 1.2s infinite; pointer-events: none; }
+.wa-gauge { position: absolute; left: -22px; bottom: -14px; display: flex; align-items: center; gap: 8px; padding: 6px 12px 6px 6px; border-radius: 99px; background: var(--surface); border: 1px solid var(--line); box-shadow: var(--shadow); }
+.wa-gauge svg { width: 42px; height: 42px; transform: rotate(-90deg); }
+.wa-g-track { fill: none; stroke: var(--surface-3); stroke-width: 5; }
+.wa-g-fill { fill: none; stroke: var(--charge); stroke-width: 5; stroke-linecap: round; transition: stroke-dasharray .8s ease; }
+.wa-gauge span { display: flex; flex-direction: column; line-height: 1.1; }
+.wa-gauge b { font-size: 15px; font-variant-numeric: tabular-nums; }
+.wa-gauge small { font-size: 10.5px; color: var(--muted); }
+.wa-bolt { position: absolute; right: -10px; top: -10px; width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; background: var(--lime); color: #1A2E05; box-shadow: 0 0 0 0 color-mix(in srgb, var(--lime) 55%, transparent); animation: bolt-pulse 2.4s ease-out infinite; }
+.wa-bolt svg { width: 18px; height: 18px; }
+@media (max-width: 860px) { .welcome-art { width: 220px; } }
+
+/* ======================================================================
+   Motion (js/motion.js). Entrance effects only run while .view has .enter
+   ====================================================================== */
+@keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes pop { 0% { opacity: 0; transform: scale(.6); } 70% { transform: scale(1.08); } 100% { opacity: 1; transform: none; } }
+@keyframes draw { to { stroke-dashoffset: 0; } }
+@keyframes grow { from { transform: scaleY(0); } to { transform: none; } }
+@keyframes grow-w { from { width: 0; } }
+@keyframes sweep { from { stroke-dasharray: 0 400; } }
+@keyframes kenburns { from { transform: scale(1.12) translateX(2%); } to { transform: scale(1.02); } }
+@keyframes shine { 0% { transform: translateX(-120%); } 35%, 100% { transform: translateX(120%); } }
+@keyframes bolt-pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--lime) 55%, transparent); } 70%, 100% { box-shadow: 0 0 0 14px transparent; } }
+@keyframes stripes { from { background-position: 0 0; } to { background-position: 28px 0; } }
+@keyframes dot-pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, currentColor 45%, transparent); } 80%, 100% { box-shadow: 0 0 0 7px transparent; } }
+@keyframes halo { 0% { opacity: .35; transform: scale(.7); } 100% { opacity: 0; transform: scale(1.6); } }
+@keyframes dialog-in { from { opacity: 0; transform: translateY(10px) scale(.97); } to { opacity: 1; transform: none; } }
+
+/* page entrance: sections rise in, one after another */
+.view.enter > *, .view.enter .dash > *, .view.enter .stat-grid > *, .view.enter .vgrid > *, .view.enter .st-list > *, .view.enter .report-grid > *, .view.enter .live-grid > *, .view.enter .vlist > *, .view.enter .depot-grid > *, .view.enter .span-4.stack > *, .view.enter .span-8.stack > * { animation: rise .55s cubic-bezier(.2,.7,.2,1) both; }
+.view.enter > :nth-child(2), .view.enter .dash > :nth-child(2), .view.enter .stat-grid > :nth-child(2), .view.enter .vgrid > :nth-child(2), .view.enter .vlist > :nth-child(2), .view.enter .st-list > :nth-child(2), .view.enter .report-grid > :nth-child(2) { animation-delay: .05s; }
+.view.enter > :nth-child(3), .view.enter .dash > :nth-child(3), .view.enter .stat-grid > :nth-child(3), .view.enter .vgrid > :nth-child(3), .view.enter .vlist > :nth-child(3), .view.enter .st-list > :nth-child(3), .view.enter .report-grid > :nth-child(3) { animation-delay: .1s; }
+.view.enter > :nth-child(4), .view.enter .dash > :nth-child(4), .view.enter .stat-grid > :nth-child(4), .view.enter .vgrid > :nth-child(4), .view.enter .vlist > :nth-child(4), .view.enter .st-list > :nth-child(4), .view.enter .report-grid > :nth-child(4) { animation-delay: .15s; }
+.view.enter .dash > :nth-child(5), .view.enter .stat-grid > :nth-child(5), .view.enter .vgrid > :nth-child(5), .view.enter .vlist > :nth-child(5), .view.enter .st-list > :nth-child(5), .view.enter .report-grid > :nth-child(5) { animation-delay: .2s; }
+.view.enter .dash > :nth-child(6), .view.enter .stat-grid > :nth-child(6), .view.enter .vgrid > :nth-child(6), .view.enter .vlist > :nth-child(6), .view.enter .st-list > :nth-child(6) { animation-delay: .25s; }
+.view.enter .dash > :nth-child(7), .view.enter .stat-grid > :nth-child(7), .view.enter .vgrid > :nth-child(7), .view.enter .st-list > :nth-child(7) { animation-delay: .3s; }
+.view.enter .dash > :nth-child(n+8), .view.enter .stat-grid > :nth-child(n+8), .view.enter .vgrid > :nth-child(n+8), .view.enter .st-list > :nth-child(n+8) { animation-delay: .35s; }
+.view.enter .welcome .welcome-art { animation: rise .8s .15s cubic-bezier(.2,.7,.2,1) both; }
+.view.enter .welcome-chips > * { animation: pop .45s cubic-bezier(.2,.7,.2,1) both; }
+.view.enter .welcome-chips > :nth-child(2) { animation-delay: .08s; } .view.enter .welcome-chips > :nth-child(3) { animation-delay: .16s; } .view.enter .welcome-chips > :nth-child(4) { animation-delay: .24s; }
+.view.enter .wa-g-fill { animation: sweep 1.4s .3s cubic-bezier(.2,.7,.2,1) both; }
+
+/* charts draw themselves */
+.view.enter .c-line:not(.dash) { stroke-dasharray: 1; stroke-dashoffset: 1; animation: draw 1.2s .2s cubic-bezier(.3,.6,.2,1) forwards; }
+.view.enter .c-line.dash, .view.enter .c-area { animation: fade .9s .5s both; }
+.view.enter .c-end { animation: pop .4s 1.2s both; transform-box: fill-box; transform-origin: center; }
+.view.enter .c-bar { transform-box: fill-box; transform-origin: center bottom; animation: grow .6s cubic-bezier(.2,.7,.2,1) both; animation-delay: calc(var(--i, 0) * 22ms + .15s); }
+.view.enter .d-seg { animation: sweep 1.2s .2s cubic-bezier(.2,.7,.2,1) both; }
+.view.enter .hbar-track i, .view.enter .batt-bar i, .view.enter .progress i { animation: grow-w 1s .25s cubic-bezier(.2,.7,.2,1) both; }
+.view.enter .lm-icon, .view.enter .map .stn, .view.enter .map .fv { animation: fade .6s .3s both; }
+
+/* always-on, subtle: charging looks alive */
+.batt-bar i.mint { background-image: linear-gradient(115deg, rgba(255,255,255,.28) 25%, transparent 25%, transparent 50%, rgba(255,255,255,.28) 50%, rgba(255,255,255,.28) 75%, transparent 75%), linear-gradient(90deg, var(--charge), var(--mint)); background-size: 28px 100%, 100% 100%; animation: stripes 1s linear infinite; }
+.badge.mint::before, .live-chip::before, .oc-dot.on, .sync-state.on .live-dot { animation: dot-pulse 1.8s ease-out infinite; }
+.badge.mint::before { color: var(--charge); } .live-chip::before, .oc-dot.on { color: var(--ok); }
+.map .fv.charging .halo, .map .fv.waiting .halo { transform-box: fill-box; transform-origin: center; animation: halo 1.8s ease-out infinite; }
+.lm-fv.charging i { animation: dot-pulse 1.8s ease-out infinite; color: var(--mint); }
+
+/* interaction feedback */
+.btn { transition: background .15s, border-color .15s, transform .12s, box-shadow .15s; }
+.btn:active:not(:disabled) { transform: scale(.97); }
+.vcard, .qa, .st-item, .report, .stat-card, .theme-opt, .demo-acct { transition: transform .2s cubic-bezier(.2,.7,.2,1), box-shadow .2s, border-color .2s; }
+.vcard:hover, .st-item:hover, .report:hover { transform: translateY(-3px); box-shadow: var(--shadow); }
+.qa:hover { transform: translateY(-2px); }
+.stat-card:hover { transform: translateY(-2px); box-shadow: var(--shadow); }
+.nav-link svg { transition: transform .2s; } .nav-link:hover svg { transform: translateX(2px); }
+.nav-link[aria-current="page"]::before { animation: grow .3s ease both; transform-origin: center; }
+.dialog { animation: dialog-in .22s cubic-bezier(.2,.7,.2,1); }
+.dialog-backdrop { animation: fade .2s both; }
+.pop:not([hidden]) { animation: dialog-in .16s cubic-bezier(.2,.7,.2,1); }
+.tabs button, .seg button { transition: color .15s, background .15s, box-shadow .15s; }
+/* sign-in page */
+.auth-copy h1, .auth-copy p, .auth-stats { animation: rise .8s cubic-bezier(.2,.7,.2,1) both; }
+.auth-copy p { animation-delay: .12s; } .auth-stats { animation-delay: .24s; }
+.auth-card > * { animation: rise .6s cubic-bezier(.2,.7,.2,1) both; }
+.auth-card > :nth-child(2) { animation-delay: .06s; } .auth-card > :nth-child(3) { animation-delay: .12s; } .auth-card > :nth-child(4) { animation-delay: .18s; } .auth-card > :nth-child(5) { animation-delay: .24s; } .auth-card > :nth-child(6) { animation-delay: .3s; }
+
+/* reduced motion: by choice (Settings) or by the device */
+:root[data-motion="reduced"] *, :root[data-motion="reduced"] *::before, :root[data-motion="reduced"] *::after { animation: none !important; transition: none !important; }
+:root[data-motion="reduced"] .wa-slide.on, :root[data-motion="reduced"] .wa-slide:first-child { opacity: 1; }
+
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; }
 }
