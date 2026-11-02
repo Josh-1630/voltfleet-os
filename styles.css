@@ -317,7 +317,10 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
 .tools { display: flex; gap: 4px; }
 .clock-pill { display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 12px; border-radius: 99px; background: var(--surface); border: 1px solid var(--line); font-size: 12.5px; color: var(--muted); white-space: nowrap; }
 .clock-pill .sep { width: 1px; height: 14px; background: var(--line-strong); }
-.live-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 3px var(--ok-soft); }
+.live-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--faint); flex: none; }
+.sync-state { display: inline-flex; align-items: center; gap: 7px; }
+.sync-state.on { color: var(--ok); }
+.sync-state.on .live-dot { background: var(--ok); box-shadow: 0 0 0 3px var(--ok-soft); }
 .mobile-only { display: none; }
 .bell .dot-count { position: absolute; top: 3px; right: 3px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 99px; background: var(--bad); color: #fff; font: 600 10px/16px var(--font); }
 .view { padding-block: 4px 48px; padding-left: max(32px, env(safe-area-inset-left, 0px)); padding-right: max(32px, env(safe-area-inset-right, 0px)); display: flex; flex-direction: column; gap: var(--gap); outline: none; max-width: 1600px; }

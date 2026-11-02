@@ -189,14 +189,25 @@
     return `<section class="panel"><div class="panel-head"><div><h2>Demo clock</h2><div class="sub">The live feed is simulated. Speed it up to watch trips, bookings and sessions play out.</div></div><span class="num strong" data-live="ad-clock">${VF.fmtDayTime(VF.now())}</span></div>
       <div class="panel-body row"><div class="seg" role="group">${[1, 5, 20, 60].map((x) => `<button type="button" data-act="ad-speed" data-x="${x}" aria-pressed="${s.clock.speed === x}">${x}×</button>`).join('')}</div>
         <button class="btn" data-act="ad-pause">${icon(s.clock.paused ? 'play' : 'pause')}${s.clock.paused ? 'Resume' : 'Pause'}</button></div></section>
+    <section class="panel"><div class="panel-head"><div><h2>Shared demo world</h2><div class="sub">Every device that opens the demo sees the same stations, bookings and drivers</div></div>${VF.cloud && VF.cloud.online && VF.cloud.online() ? pill('ok', 'Synced across devices') : pill('warn', 'This device only')}</div>
+      <div class="panel-body"><dl class="dl" data-live="ad-sync">${syncRows()}</dl></div></section>
     <section class="panel"><div class="panel-head"><h2>Platform settings</h2></div><div class="panel-body form-grid">
       <label class="field"><span>Currency code</span><input class="input" id="s-cur" maxlength="4" value="${esc(s.settings.currency)}" data-chg="ad-set" data-k="currency"></label>
       <label class="field"><span>Time zone (hours from GMT)</span><input class="input" id="s-tz" type="number" min="-12" max="14" value="${s.settings.tz}" data-chg="ad-set" data-k="tz"></label>
       <label class="field"><span>Driver battery reserve (%)</span><input class="input" id="s-res" type="number" min="5" max="30" value="${s.settings.reserve}" data-chg="ad-set" data-k="reserve"></label>
     </div></section>
     <section class="panel"><div class="panel-head"><div><h2>Demo data</h2><div class="sub">Everything is stored in this browser</div></div></div><div class="panel-body row">
-      ${ui.confirmReset ? `<span class="confirm-inline"><strong>Reset all data to the demo?</strong><button class="btn small danger" data-act="ad-reset-yes">Yes, reset</button><button class="btn small" data-act="ad-reset-no">Cancel</button></span>` : `<button class="btn danger" data-act="ad-reset">Reset demo data</button>`}
+      ${ui.confirmReset ? `<span class="confirm-inline"><strong>Reset all data to the demo${VF.cloud && VF.cloud.online && VF.cloud.online() ? ' for every device' : ''}?</strong><button class="btn small danger" data-act="ad-reset-yes">Yes, reset</button><button class="btn small" data-act="ad-reset-no">Cancel</button></span>` : `<button class="btn danger" data-act="ad-reset">Reset demo data</button>`}
     </div></section>`;
+  }
+
+  function syncRows() {
+    const c = VF.cloud || {};
+    const on = c.online && c.online();
+    return `<dt>Backend</dt><dd>${on ? `Supabase · ${esc(c.region || '')}` : 'None (stored in this browser)'}</dd>
+      <dt>Status</dt><dd>${esc(c.label ? c.label() : 'This device only')}${c.error ? ` <span class="faint small">${esc(c.error)}</span>` : ''}</dd>
+      <dt>World revision</dt><dd class="num">${fmt.n(VF.state.rev || 0)}</dd>
+      <dt>This device</dt><dd>${on ? (c.leader ? 'Running the simulation for everyone' : 'Following the live world') : 'Running its own simulation'}</dd>`;
   }
 
   // ---------------------------------------------------------------- live
@@ -208,7 +219,7 @@
   }
   function live(page) {
     if (page === 'ad-overview') return { 'ad-kpis': { html: kpis() }, 'ad-map': { html: mapHTML() }, 'ad-ops': { html: opsRows() } };
-    if (page === 'ad-system') return { 'ad-clock': VF.fmtDayTime(VF.now()) };
+    if (page === 'ad-system') return { 'ad-clock': VF.fmtDayTime(VF.now()), 'ad-sync': { html: syncRows() } };
     return null;
   }
 

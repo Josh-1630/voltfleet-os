@@ -24,9 +24,18 @@ One platform that connects **EV drivers**, **their vehicles** (any make) and **c
 
 All data is simulated so the product can be demonstrated end to end: 10 stations, 2 operators, 29 drivers, 14 vehicle models, and a demo clock running at 20× speed (adjustable under Admin → System). Everything is stored in the browser. The vehicle make data coverage shown is *expected* and must be confirmed for each integration.
 
-## Shared demo state
+## Shared demo state (Supabase)
 
-All roles share one simulated world per browser. Open several tabs, for example the driver app in one and the operator console in another: one tab runs the simulation and saves every second, and the others pick up each change within about a second. Who is signed in is per tab. Different browsers or devices each have their own separate world until a backend is added (step 1 below).
+Every device that opens the demo shares one live world, stored in Supabase (project `voltfleet-os`, London, eu-west-2). A booking made on a phone shows up on an operator's laptop within about a second.
+
+- **One device leads.** A visible device runs the simulation and saves a compressed snapshot (about 20 KB) every 2 seconds through `world_tick`. A 6-second lease stops two devices from running it at once; if the leader closes, another device takes over.
+- **User actions land straight away.** Bookings, cancellations, consent changes and similar actions are saved through `world_push`, and the leader adopts them.
+- **Everyone stays current.** Each device subscribes to Supabase Realtime and also checks the revision every 5 seconds as a safety net.
+- **Per-device sign-in.** Who is signed in stays with each browser tab.
+- **Offline fallback.** If Supabase can't be reached (or `js/config.js` has no `url`), the app runs on that device alone, and tabs in the same browser still sync with each other.
+- **Security.** Row Level Security lets the public key read the demo world but not change it directly; the two write functions accept only the single `demo` world and cap its size. Because the demo has no real logins, anyone with the link can change the shared world. **Admin → System → Reset demo data** restores it for everyone.
+
+**For production,** replace the single shared world with real tables (stations, connectors, bookings, sessions, drivers) and Supabase Auth, with Row Level Security per role and operator. The privacy rules the UI enforces today would then be enforced by the database.
 
 ## Run locally
 
@@ -48,12 +57,13 @@ No build step. Upload this folder to any static host:
 - `js/core.js`: data model, demo clock and live feed, vehicle catalog, booking engine, load balancing, privacy layer, map and charts
 - `js/driver.js`, `js/operator.js`, `js/admin.js`: the three apps
 - `js/connect.js`: VoltFleet Connect (developer portal, consent flow, simulated API and webhooks)
+- `js/cloud.js`, `js/config.js`: cross-device sync through Supabase (`js/vendor/` holds the MIT-licensed supabase-js client)
 - `js/app.js`: sign-in, role-based routing, live updates
 - `sw.js`, `manifest.webmanifest`: offline use and install to home screen
 
 ## Next steps to production
 
-1. **Backend and auth.** Postgres with row-level security per role and operator (e.g. Supabase). Phone/email OTP for drivers; SSO + MFA for staff.
+1. **Backend and auth.** Move from the shared demo world to real Supabase tables with row-level security per role and operator. Phone/email OTP for drivers; SSO + MFA for staff.
 2. **OCPP 1.6J / 2.0.1 central system.** `ReserveNow`, `RemoteStart/Stop`, `SetChargingProfile` and `StatusNotification` drive the booking and load-balancing features shown here.
 3. **VoltFleet Connect for real.** An OAuth 2.0 authorization server, a public REST API with rate limits, signed webhooks, and usage-based billing.
 4. **Vehicle data adapters.** Tesla Fleet API and a BYD partner/OBD-II path first, then an aggregator for Rivian and other makes. Each adapter outputs the unified vehicle record shown in Admin → Vehicles & OEMs.

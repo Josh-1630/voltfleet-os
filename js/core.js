@@ -808,7 +808,13 @@ window.VF = (function () {
   const STORE_KEY = 'voltfleet-os:v2', REV_KEY = 'voltfleet-os:rev', SESSION_KEY = 'voltfleet-os:session';
   VF.STORE_KEY = STORE_KEY;
   VF.storageOk = true;
+  // Keep a copy on this device (fast reloads, offline use) without claiming a new revision.
+  VF.saveLocal = function () {
+    try { localStorage.setItem(STORE_KEY, JSON.stringify({ state: VF.state })); VF.storageOk = true; } catch (e) { VF.storageOk = false; }
+    try { sessionStorage.setItem(SESSION_KEY, JSON.stringify(VF.session || null)); } catch (e) { /* per-tab sign-in not kept */ }
+  };
   VF.save = function () {
+    if (VF.cloud && VF.cloud.online && VF.cloud.online()) { VF.cloud.push(); return; }
     try {
       const stored = Number(localStorage.getItem(REV_KEY)) || 0;
       VF.state.rev = Math.max(VF.state.rev || 0, stored) + 1;

@@ -123,6 +123,8 @@
   const brandMark = () => '<svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><rect x="1" y="1" width="30" height="30" rx="8" fill="currentColor"/><path d="M18.5 5 9 18h6.2l-1.7 9L23 14h-6.3z" fill="var(--bg)"/></svg>';
   const clockText = () => `${VF.fmtDayTime(VF.now())} ${VF.tzLabel()}`;
   const speedText = () => (VF.state.clock.paused ? 'Paused' : `Demo feed · ${VF.state.clock.speed}×`);
+  const syncText = () => (VF.cloud && VF.cloud.label ? VF.cloud.label() : 'This device only');
+  const syncOn = () => !!(VF.cloud && VF.cloud.online && VF.cloud.online());
 
   // ---------------------------------------------------------------- shells
   const ROLE_NAME = { driver: 'Driver', operator: 'Operator manager', admin: 'Super admin', developer: 'Developer' };
@@ -139,7 +141,7 @@
       </aside>
       <div class="main">
         <header class="topbar"><div class="topbar-title"><div class="eyebrow" id="view-eyebrow"></div><h1 id="view-title"></h1></div>
-          <div class="topbar-tools"><span class="clock-pill"><i class="live-dot"></i><span class="num" data-live="clock">${clockText()}</span><span class="sep"></span><span data-live="speed">${speedText()}</span></span>
+          <div class="topbar-tools"><span class="clock-pill"><span class="num" data-live="clock">${clockText()}</span><span class="sep"></span><span data-live="speed">${speedText()}</span><span class="sep"></span><span class="sync-state${syncOn() ? ' on' : ''}" data-live="sync-state" title="Where this demo's data lives"><i class="live-dot"></i><span data-live="sync">${syncText()}</span></span></span>
             <span id="tools" class="tools"></span><button class="icon-btn mobile-only" data-act="signout" aria-label="Switch account" title="Switch account">${icon('logout')}</button></div></header>
         <main id="view" class="view" tabindex="-1"></main>
       </div>
@@ -240,6 +242,8 @@
   const TAB_ID = Math.random().toString(36).slice(2);
   const LEADER_KEY = 'voltfleet-os:leader';
   function leads() {
+    const c = VF.cloud && VF.cloud.leads ? VF.cloud.leads() : null;
+    if (c !== null) return c;
     try {
       const l = JSON.parse(localStorage.getItem(LEADER_KEY) || 'null'); const now = Date.now();
       if (!l || l.id === TAB_ID || now - l.t > 3500) { localStorage.setItem(LEADER_KEY, JSON.stringify({ id: TAB_ID, t: now })); return true; }
@@ -248,6 +252,7 @@
   }
   function onStorage(e) {
     if (e.key !== VF.STORE_KEY || !e.newValue) return;
+    if (VF.cloud && VF.cloud.online && VF.cloud.online()) return; // each tab gets updates from the server instead
     if (!VF.adopt(e.newValue)) return;
     if (!role()) { if (!current && $('.auth')) return; }
     refreshUi();
@@ -264,12 +269,15 @@
   }
   function tick() {
     if (document.hidden) return;
-    if (leads()) { if (VF.tick(1000)) (VF.tickHooks || []).forEach((f) => f()); VF.save(); }
+    if (leads()) {
+      if (VF.tick(1000)) (VF.tickHooks || []).forEach((f) => f());
+      if (VF.cloud && VF.cloud.online && VF.cloud.online()) VF.cloud.saveTick(); else VF.save();
+    }
     tickN++;
     if (!current) return;
     const app = appFor(current.role);
     if (app.poll) app.poll();
-    applyLive({ clock: clockText(), speed: speedText() });
+    applyLive({ clock: clockText(), speed: speedText(), sync: syncText(), 'sync-state': { cls: 'sync-state' + (syncOn() ? ' on' : '') } });
     renderNav();
     if (app.tools) VF.setHTML($('#tools'), app.tools());
     const ae = document.activeElement;
@@ -299,6 +307,8 @@
     });
     window.addEventListener('hashchange', routeChange);
     window.addEventListener('storage', onStorage);
+    VF.onRemoteState = () => { if (current) refreshUi(); else if (!role() && $('.auth')) { /* sign-in page: nothing live to refresh */ } };
+    if (VF.cloud && VF.cloud.start) VF.cloud.start();
     window.addEventListener('pagehide', () => { try { const l = JSON.parse(localStorage.getItem(LEADER_KEY) || 'null'); if (l && l.id === TAB_ID) localStorage.removeItem(LEADER_KEY); } catch (e) { /* ignore */ } });
     document.addEventListener('submit', (e) => { if (e.target.id === 'login-form') { e.preventDefault(); signInByEmail(); } });
     window.addEventListener('resize', VF.debounce(drawCharts, 150));
