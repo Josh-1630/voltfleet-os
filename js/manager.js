@@ -16,6 +16,7 @@
 
   // ---------------------------------------------------------------- shared fragments
   function chargeLabel(v) {
+    if (v.real) { const s = v.summary || {}; return s.charging ? 'Charging · live' : s.pluggedIn ? 'Plugged in' : v.error ? 'Last reading failed' : `Live · updated ${VF.real.ago(v.fetchedAt)}`; }
     if (v.status === 'charging') { const live = VF.fleetLiveSessions().find((x) => x.v.id === v.id); return live ? `Charging at ${live.st.name.split(' ').slice(0, 2).join(' ')} · ${fmt.kw(live.se.kw)}` : 'Charging'; }
     if (v.status === 'waiting') return 'Waiting for a free connector';
     if (v.trip && v.trip.purpose === 'charge') return `Heading to ${VF.station(v.trip.stationId).name.split(' ').slice(0, 2).join(' ')}`;
@@ -25,7 +26,7 @@
   function vehicleRow(v) {
     return `<div class="vrow" data-act="m-open-vehicle" data-id="${v.id}" role="button" tabindex="0">
       <div class="vrow-art">${C.vehicleArt(VF.vehicleKind(v.model))}</div>
-      <div class="vrow-main"><strong>${esc(v.name)}</strong><span class="muted small">${esc(v.model)} · <span class="mono">${esc(v.plate)}</span></span></div>
+      <div class="vrow-main"><strong>${esc(v.name)}</strong><span class="muted small">${esc(v.model)} · ${v.real ? '<span class="live-chip">Live</span>' : `<span class="mono">${esc(v.plate)}</span>`}</span></div>
       <div class="vrow-batt">${C.battery(v.soc, { charging: v.status === 'charging', live: `v-${v.id}-w`, liveText: `v-${v.id}-soc` })}<span class="small muted"><span data-live="v-${v.id}-range">${fmt.km(VF.fleetRange(v))}</span> range</span></div>
       <div class="vrow-status">${C.badge(v.status)}<span class="small muted" data-live="v-${v.id}-chg">${esc(chargeLabel(v))}</span></div>
       <div class="vrow-loc small muted">${icon('map-pin')}<span data-live="v-${v.id}-loc">${esc(VF.fleetPlace(v))}</span></div>
@@ -90,7 +91,8 @@
     vs.filter((v) => v.soc < 20 && v.status !== 'charging').forEach((v) => items.push(['battery-low', 'bad', `${v.name} at ${Math.round(v.soc)}%`, chargeLabel(v), v.id]));
     vs.filter((v) => v.status === 'offline').forEach((v) => items.push(['wifi-off', 'warn', `${v.name} offline`, `Last seen ${VF.relTime(v.lastSeen)}`, v.id]));
     vs.filter((v) => v.status === 'maintenance').forEach((v) => items.push(['wrench', 'warn', `${v.name} in maintenance`, (v.maintenance.find((x) => x.open) || {}).type || 'Workshop', v.id]));
-    vs.filter((v) => v.odo > v.nextServiceKm - 500 && v.status !== 'maintenance').forEach((v) => items.push(['calendar-clock', 'teal', `${v.name} service due`, `at ${fmt.n(v.nextServiceKm)} km`, v.id]));
+    vs.filter((v) => v.real && v.error).forEach((v) => items.push(['radio-tower', 'warn', `${v.name}: no fresh data`, v.error, v.id]));
+    vs.filter((v) => !v.real && v.odo > v.nextServiceKm - 500 && v.status !== 'maintenance').forEach((v) => items.push(['calendar-clock', 'teal', `${v.name} service due`, `at ${fmt.n(v.nextServiceKm)} km`, v.id]));
     return items;
   }
   function chargingRows(limit) {
@@ -145,7 +147,7 @@
         ${C.card({ cls: 'span-4 lime-card', title: 'CO₂ emissions saved', sub: 'Compared with diesel equivalents' }, `<div class="big-metric lime"><span>${fmt.n(VF.fleetMetrics(ui.dashDays).co2, 1)}</span><small>tonnes in ${ui.dashDays} days</small></div><div class="chart-slot" data-chart="m-co2"></div>`)}
         ${C.card({ cls: 'span-4', title: 'Charging costs', sub: `${esc(VF.state.settings.currency)} per day` }, '<div class="chart-slot" data-chart="m-cost"></div>')}
         ${C.card({ cls: 'span-4', title: 'Vehicle utilisation', sub: 'Share of working hours in use, 30 days' }, C.hbars(utilisation().slice(0, 6), { tone: 'mint' }))}
-        ${C.card({ cls: 'span-4', title: 'Battery performance', sub: 'State of health, lowest first' }, C.hbars(F().vehicles.slice().sort((a, b) => a.soh - b.soh).slice(0, 6).map((v) => ({ label: v.name, value: v.soh, text: v.soh + '%', tone: v.soh < 90 ? 'warn' : 'teal' }))) + `<p class="small muted">Fleet average ${fmt.n(sum(F().vehicles, (v) => v.soh) / F().vehicles.length, 1)}% · batteries below 80% need a dealer check.</p>`)}
+        ${C.card({ cls: 'span-4', title: 'Battery performance', sub: 'State of health, lowest first' }, C.hbars(VF.simVehicles().sort((a, b) => a.soh - b.soh).slice(0, 6).map((v) => ({ label: v.name, value: v.soh, text: v.soh + '%', tone: v.soh < 90 ? 'warn' : 'teal' }))) + `<p class="small muted">Fleet average ${fmt.n(sum(VF.simVehicles(), (v) => v.soh) / Math.max(1, VF.simVehicles().length), 1)}% · batteries below 80% need a dealer check.</p>`)}
       </div>`;
   }
   function statusDonut() {
@@ -154,7 +156,7 @@
   }
   function utilisation() {
     const rows = VF.fleetHistory();
-    return F().vehicles.map((v) => { const h = sum(rows.filter((x) => x.vid === v.id), (x) => x.hours); const pct = Math.min(100, h / (30 * 12) * 100); return { label: v.name, value: pct, text: Math.round(pct) + '%' }; }).sort((a, b) => b.value - a.value);
+    return VF.simVehicles().map((v) => { const h = sum(rows.filter((x) => x.vid === v.id), (x) => x.hours); const pct = Math.min(100, h / (30 * 12) * 100); return { label: v.name, value: pct, text: Math.round(pct) + '%' }; }).sort((a, b) => b.value - a.value);
   }
   VF.mgr.utilisation = utilisation;
   const label = (ms) => VF.fmtDate(ms);
@@ -175,7 +177,7 @@
   function vehicleCard(v) {
     return `<article class="vcard">
       <button class="vcard-hit" data-act="m-open-vehicle" data-id="${v.id}" aria-label="Open ${esc(v.name)}"></button>
-      <div class="vcard-top">${C.badge(v.status)}<span class="mono small muted">${esc(v.plate)}</span></div>
+      <div class="vcard-top">${C.badge(v.status)}${v.real ? '<span class="live-chip">Live · Smartcar</span>' : `<span class="mono small muted">${esc(v.plate)}</span>`}</div>
       <div class="vcard-art">${C.vehicleArt(VF.vehicleKind(v.model))}</div>
       <h3>${esc(v.name)}</h3><p class="small muted">${esc(v.model)} · ${v.year}</p>
       ${C.battery(v.soc, { charging: v.status === 'charging', live: `v-${v.id}-w`, liveText: `v-${v.id}-soc` })}
@@ -185,7 +187,7 @@
   function pageVehicles() {
     const list = filteredVehicles(); const all = F().vehicles;
     const cnt = (k) => (k === 'all' ? all.length : all.filter((v) => v.status === k || (k === 'charging' && v.status === 'waiting')).length);
-    return `<div class="toolbar">
+    return `${VF.real.banner()}<div class="toolbar">
         <div class="search-field">${icon('search')}<input class="input" type="search" id="m-vq" data-inp="m-vq" placeholder="Search name, model, plate or driver" value="${esc(ui.vq)}" aria-label="Search vehicles"></div>
         <div class="seg" role="group" aria-label="Status">${VFILTERS.map(([k, l]) => `<button type="button" data-act="m-vfilter" data-k="${k}" aria-pressed="${ui.vfilter === k}">${l}<span class="n">${cnt(k)}</span></button>`).join('')}</div>
         <div class="toolbar-end">${C.seg([['grid', '', 'layout-grid'], ['table', '', 'list']], ui.vview, 'm-vview', ' data-tip-pos="b"')}</div>
@@ -208,6 +210,7 @@
   function pageVehicle() {
     const v = VF.fleetVehicle(ui.vehicle);
     if (!v) return C.card({}, C.empty({ icon: 'car-front', title: 'Vehicle not found', text: 'It may have been removed from the fleet.', action: `<a class="btn primary" href="#m-vehicles">Back to My Vehicles</a>` }));
+    if (v.real) return VF.real.page(v);
     const tab = ui.vtab;
     return `<div class="detail-head card">
         <div class="dh-art">${C.vehicleArt(VF.vehicleKind(v.model))}</div>
@@ -374,7 +377,8 @@
     title(page) { if (page === 'm-vehicle') { const v = VF.fleetVehicle(ui.vehicle); return v ? v.name : 'Vehicle'; } return null; },
     eyebrow(page) { return page === 'm-dashboard' ? (VF.state.fleet ? VF.state.fleet.org.name : '') : null; },
     actions(page) {
-      if (page === 'm-dashboard' || page === 'm-vehicles') return `<button class="btn primary" data-act="m-add-vehicle">${icon('plus')}<span class="hide-sm">Add vehicle</span></button>`;
+      if (page === 'm-vehicles') return `${VF.real.connectButton()}<button class="btn primary" data-act="m-add-vehicle">${icon('plus')}<span class="hide-sm">Add vehicle</span></button>`;
+      if (page === 'm-dashboard') return `<button class="btn primary" data-act="m-add-vehicle">${icon('plus')}<span class="hide-sm">Add vehicle</span></button>`;
       if (page === 'm-sessions') return `<button class="btn" data-act="m-sess-csv">${icon('download')}<span class="hide-sm">Export</span></button>`;
       return '';
     },
@@ -388,7 +392,7 @@
     },
     live(page) {
       const vals = {};
-      F().vehicles.forEach((v) => { vehicleLive(vals, v); vals[`v-${v.id}-odo`] = fmt.n(v.odo) + ' km'; vals[`v-${v.id}-temp`] = fmt.n(v.tempC, 1); });
+      F().vehicles.forEach((v) => { vehicleLive(vals, v); vals[`v-${v.id}-odo`] = fmt.n(v.odo) + ' km'; vals[`v-${v.id}-temp`] = v.tempC != null ? fmt.n(v.tempC, 1) : '—'; });
       sessionLive(vals);
       if (page === 'm-dashboard') { vals['m-kpis'] = { html: kpis() }; vals['m-donut'] = { html: statusDonut() }; VF.mgr.liveMap('m-dash-map'); }
       if (page === 'm-vehicle') VF.mgr.liveMap('m-veh-map');
@@ -432,7 +436,7 @@
     });
   }
   function openStartSession(vehicleId, stationId) {
-    const vs = F().vehicles.filter((v) => !['maintenance', 'offline', 'charging'].includes(v.status));
+    const vs = F().vehicles.filter((v) => !v.real && !['maintenance', 'offline', 'charging'].includes(v.status));
     if (!vs.length) { VF.toast('No vehicle can charge right now'); return; }
     const vid = vehicleId || vs.slice().sort((a, b) => a.soc - b.soc)[0].id;
     const opts = VF.fleetChargeOptions(VF.fleetVehicle(vid));

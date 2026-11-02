@@ -445,6 +445,7 @@
     document.addEventListener('submit', (e) => { if (e.target.id === 'login-form') { e.preventDefault(); signInByEmail(); } });
     window.addEventListener('resize', VF.debounce(drawCharts, 150));
     routeChange();
+    if (VF.real) VF.real.handleRedirect().then((back) => { if (!back && VF.real.connected()) VF.real.poll(); });
     setInterval(tick, 1000);
     if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol) && window.self === window.top) {
       navigator.serviceWorker.register('sw.js').catch(() => { /* offline cache is optional */ });

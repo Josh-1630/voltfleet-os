@@ -18,6 +18,15 @@ window.VOLTFLEET_CLOUD = {
      'none'     The built-in schematic map, no network needed.
    Routes: 'osrm' snaps journey lines to real roads through an OSRM server. The default is the public demo
    server, which is for testing only; run your own OSRM (or set routing: 'none') for production. */
+/* Vehicle telematics through Smartcar (API v3). Only the public Connect client ID belongs here. The API client ID and
+   secret are Supabase Edge Function secrets (SMARTCAR_CLIENT_ID, SMARTCAR_CLIENT_SECRET) used by
+   supabase/functions/smartcar. mode: 'simulated' (Smartcar's simulated cars), 'test' or 'live'.
+   Register this site's address (e.g. https://josh-1630.github.io/voltfleet-os/) as a redirect URI in Smartcar. */
+window.VOLTFLEET_SMARTCAR = {
+  clientId: '',
+  mode: 'simulated',
+};
+
 window.VOLTFLEET_MAPS = {
   provider: 'carto',
   key: '',

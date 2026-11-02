@@ -1240,6 +1240,15 @@ td .select { min-width: 160px; }
 .lm-demand { width: 100%; height: 100%; border-radius: 50%; display: grid; place-items: center; background: color-mix(in srgb, var(--accent) 16%, transparent); border: 1.5px solid var(--accent); color: var(--accent); font: 600 12px var(--font); box-sizing: border-box; }
 @media (max-width: 720px) { .lmap { aspect-ratio: 4 / 3; min-height: 240px; } .lm-lab { font-size: 10.5px; } }
 
+
+/* live (Smartcar) vehicles */
+.live-chip { display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 8px; border-radius: 99px; background: var(--accent-soft); color: var(--accent); font-size: 11px; font-weight: 600; white-space: nowrap; }
+.live-chip::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 25%, transparent); }
+.live-badge { gap: 6px; } .live-badge::before { display: none; } .live-badge svg { width: 13px; height: 13px; }
+.integration .card-actions { margin-top: 8px; }
+.dialog .steps { padding-left: 20px; }
+.dialog .steps li { gap: 4px; }
+
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; }
 }

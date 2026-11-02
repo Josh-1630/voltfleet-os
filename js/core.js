@@ -810,8 +810,11 @@ window.VF = (function () {
   VF.STORE_KEY = STORE_KEY;
   VF.storageOk = true;
   // Keep a copy on this device (fast reloads, offline use) without claiming a new revision.
+  // Serialise the world for storage and sync. Vehicles connected live (Smartcar) belong to one device and
+  // are never written: they are dropped from the fleet's vehicle list here.
+  VF.stateJSON = (st) => JSON.stringify(st, function (k, v) { return k === 'vehicles' && Array.isArray(v) && this && this.depots ? v.filter((x) => !x.real) : v; });
   VF.saveLocal = function () {
-    try { localStorage.setItem(STORE_KEY, JSON.stringify({ state: VF.state })); VF.storageOk = true; } catch (e) { VF.storageOk = false; }
+    try { localStorage.setItem(STORE_KEY, '{"state":' + VF.stateJSON(VF.state) + '}'); VF.storageOk = true; } catch (e) { VF.storageOk = false; }
     try { sessionStorage.setItem(SESSION_KEY, JSON.stringify(VF.session || null)); } catch (e) { /* per-tab sign-in not kept */ }
   };
   VF.save = function () {
@@ -819,7 +822,7 @@ window.VF = (function () {
     try {
       const stored = Number(localStorage.getItem(REV_KEY)) || 0;
       VF.state.rev = Math.max(VF.state.rev || 0, stored) + 1;
-      localStorage.setItem(STORE_KEY, JSON.stringify({ state: VF.state }));
+      localStorage.setItem(STORE_KEY, '{"state":' + VF.stateJSON(VF.state) + '}');
       localStorage.setItem(REV_KEY, String(VF.state.rev));
       VF.storageOk = true;
     } catch (e) { VF.storageOk = false; }

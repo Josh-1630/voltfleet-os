@@ -68,7 +68,8 @@
     notice('warning', `${off.name} stopped reporting`, `Last signal near Osu ${VF.relTime(off.lastSeen)}. The telematics unit may be unplugged.`, off.id, off.lastSeen + 15 * MIN);
     notice('warning', `${vehicles.find((v) => v.status === 'maintenance').name} is in the workshop`, 'Suspension noise check. Its driver has no vehicle today.', vehicles.find((v) => v.status === 'maintenance').id, now - 2 * HOUR);
   };
-  VF.ensureFleet = () => { if (!VF.state.fleet) VF.seedFleet(); };
+  VF.ensureFleet = () => { if (!VF.state.fleet) VF.seedFleet(); if (VF.real) VF.real.inject(); };
+  VF.simVehicles = () => (F() ? F().vehicles.filter((v) => !v.real) : []);
   VF.depotNode = (id) => ({ dp1: 'spintex', dp2: 'kaneshie' }[id] || (F() && (F().depots.find((d) => d.id === id) || {}).node) || 'spintex');
 
   function notice(sev, title, body, vehicleId, t) {
@@ -138,7 +139,7 @@
     if (!dt) return;
     const h = VF.hourOf(now); const work = h >= 6 && h < 20;
     for (const v of f.vehicles) {
-      if (v.status === 'maintenance' || v.status === 'offline') continue;
+      if (v.real || v.status === 'maintenance' || v.status === 'offline') continue; // live vehicles report their own state
       v.lastSeen = now;
       const m = VF.MODELS[v.model];
       if (v.status === 'in_use' && v.trip) {
@@ -178,20 +179,21 @@
   };
 
   // ---------------------------------------------------------------- derived data
-  VF.fleetPos = (v) => (v.trip && !v.trip.done ? VF.posAt(v.trip, v.trip.doneKm) : VF.PLACES[v.node] || VF.PLACES.spintex);
-  VF.fleetPlace = (v) => { const p = VF.fleetPos(v); const st = v.chargingAt && VF.station(v.chargingAt.stationId); return st ? st.name : VF.PLACES[VF.nearestNode(p.lat, p.lon)].name; };
-  VF.fleetRange = (v) => { const m = VF.MODELS[v.model]; return v.soc / 100 * m.kwh / (m.eff * 1.08); };
+  VF.fleetPos = (v) => (v.real ? v.loc || VF.PLACES[VF.depotNode(v.depot)] : v.trip && !v.trip.done ? VF.posAt(v.trip, v.trip.doneKm) : VF.PLACES[v.node] || VF.PLACES.spintex);
+  VF.fleetPlace = (v) => {
+    if (v.real) { if (!v.loc) return 'Location not shared'; const n = VF.nearestNode(v.loc.lat, v.loc.lon); return VF.hav(VF.PLACES[n], v.loc) < 4 ? 'Near ' + VF.PLACES[n].name : `${v.loc.lat.toFixed(4)}, ${v.loc.lon.toFixed(4)}`; } const p = VF.fleetPos(v); const st = v.chargingAt && VF.station(v.chargingAt.stationId); return st ? st.name : VF.PLACES[VF.nearestNode(p.lat, p.lon)].name; };
+  VF.fleetRange = (v) => { if (v.real && v.rangeKm != null) return v.rangeKm; const m = VF.MODELS[v.model]; return v.soc / 100 * m.kwh / (m.eff * 1.08); };
   VF.fleetSessions = () => VF.state.sessions.filter((x) => x.vehicleId && VF.fleetVehicle(x.vehicleId));
   VF.fleetLiveSessions = () => { const out = []; for (const st of VF.state.stations) for (const c of st.connectors) if (c.session && c.session.vehicleId && VF.fleetVehicle(c.session.vehicleId)) out.push({ st, c, se: c.session, v: VF.fleetVehicle(c.session.vehicleId) }); return out; };
 
   // 30 days of daily history per vehicle (SAMPLE DATA, deterministic), with today from the live simulation.
   let histCache = null;
   VF.fleetHistory = function () {
-    const f = F(); const key = f.vehicles.map((v) => v.id + v.model).join() + JSON.stringify(VF.operator('op1').pricing.bands);
+    const f = F(); const sim = VF.simVehicles(); const key = sim.map((v) => v.id + v.model).join() + JSON.stringify(VF.operator('op1').pricing.bands);
     const day0 = VF.startOfDay(VF.now()) - 29 * DAY;
     if (!histCache || histCache.key !== key || histCache.day0 !== day0) {
       const r = mulberry32(4242); const rows = [];
-      for (let d = 0; d < 29; d++) for (const v of f.vehicles) {
+      for (let d = 0; d < 29; d++) for (const v of sim) {
         const m = VF.MODELS[v.model]; const dow = VF.startOfDay(day0 + d * DAY);
         const weekday = new Date(dow + 12 * HOUR).getUTCDay();
         const down = r() < 0.04;
@@ -208,7 +210,7 @@
     // Today, from what the simulation actually did
     const today = VF.startOfDay(VF.now()); const rows = histCache.rows.slice();
     const tTrips = f.trips.filter((t) => t.end >= today); const tSess = VF.fleetSessions().filter((x) => x.end >= today);
-    for (const v of f.vehicles) {
+    for (const v of sim) {
       const km = sum(tTrips.filter((t) => t.vehicleId === v.id), (t) => t.km); const se = tSess.filter((x) => x.vehicleId === v.id);
       rows.push({ d: 29, date: today, vid: v.id, km, kwh: km * VF.MODELS[v.model].eff * 1.08, charged: sum(se, (x) => x.kwh), cost: sum(se, (x) => x.cost), hours: km / SPEED, sessions: se.length, soh: v.soh, down: v.status === 'maintenance', chargeHour: se.length ? VF.hourOf(se[0].start) : null });
     }
@@ -221,7 +223,7 @@
     const daily = []; for (let d = from; d < 30; d++) { const dr = sel.filter((x) => x.d === d); daily.push({ d, date: dr[0] ? dr[0].date : 0, km: sum(dr, (x) => x.km), kwh: sum(dr, (x) => x.kwh), charged: sum(dr, (x) => x.charged), cost: sum(dr, (x) => x.cost), hours: sum(dr, (x) => x.hours), active: dr.filter((x) => x.km > 0).length, soh: sum(dr, (x) => x.soh) / Math.max(1, dr.length) }); }
     const tot = (k) => sum(daily, (x) => x[k]);
     const km = tot('km'), kwh = tot('kwh'), charged = tot('charged'), cost = tot('cost');
-    return { days, daily, sel, km, kwh, charged, cost, co2: (km * DIESEL_KG_PER_KM - kwh * GRID_KG_PER_KWH) / 1000, per100: km ? kwh / km * 100 : 0, costPerKwh: charged ? cost / charged : 0, utilisation: tot('hours') / (f.vehicles.length * days * 12) * 100 };
+    return { days, daily, sel, km, kwh, charged, cost, co2: (km * DIESEL_KG_PER_KM - kwh * GRID_KG_PER_KWH) / 1000, per100: km ? kwh / km * 100 : 0, costPerKwh: charged ? cost / charged : 0, utilisation: tot('hours') / (Math.max(1, VF.simVehicles().length) * days * 12) * 100 };
   };
   // Compare the last 7 days with the 7 before.
   VF.fleetTrend = function (key) {
@@ -272,13 +274,13 @@
       f.vehicles = f.vehicles.filter((x) => x.id !== id);
     },
     assign(vehicleId, driverId) {
-      const v = VF.fleetVehicle(vehicleId); if (!v) return;
+      const v = VF.fleetVehicle(vehicleId); if (!v || v.real) return;
       if (v.driverId) { const old = VF.fleetDriver(v.driverId); if (old) old.vehicleId = null; }
       if (driverId) { const d = VF.fleetDriver(driverId); if (d.vehicleId) { const ov = VF.fleetVehicle(d.vehicleId); if (ov) ov.driverId = null; } d.vehicleId = v.id; v.driverId = d.id; } else v.driverId = null;
     },
     addDriver(d) { const f = F(); const dr = { id: 'fd' + (f.seq++) + Math.floor(Math.random() * 90 + 10), name: d.name, phone: d.phone, license: d.license.toUpperCase(), hired: VF.now(), score: 80, vehicleId: null }; f.drivers.push(dr); return dr; },
     removeDriver(id) { const f = F(); const d = VF.fleetDriver(id); if (d && d.vehicleId) { const v = VF.fleetVehicle(d.vehicleId); if (v) v.driverId = null; } f.drivers = f.drivers.filter((x) => x.id !== id); },
-    sendToCharge(id, stationId) { const v = VF.fleetVehicle(id); if (!v || ['charging', 'maintenance', 'offline'].includes(v.status)) return null; return goCharge(v, stationId); },
+    sendToCharge(id, stationId) { const v = VF.fleetVehicle(id); if (!v || v.real || ['charging', 'maintenance', 'offline'].includes(v.status)) return null; return goCharge(v, stationId); },
     stopCharging(id) { const live = VF.fleetLiveSessions().find((x) => x.v.id === id); if (!live) return false; VF.ocpp(live.st.id, live.c.id, '→', 'RemoteStopTransaction', 'requested by EV Manager'); VF.endSession(live.st, live.c); live.c.status = 'Finishing'; live.c.until = VF.now() + 3 * MIN; return true; },
     setMaintenance(id, on, note) {
       const v = VF.fleetVehicle(id);

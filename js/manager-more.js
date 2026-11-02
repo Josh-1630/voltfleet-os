@@ -14,7 +14,7 @@
   const place = (n) => (VF.PLACES[n] ? VF.PLACES[n].name : n);
   const placeOpts = () => Object.entries(VF.PLACES).map(([id, p]) => [id, p.name]).sort((a, b) => a[1].localeCompare(b[1]));
   const label = (ms) => VF.fmtDate(ms);
-  const canDrive = (v) => v && !['maintenance', 'offline'].includes(v.status);
+  const canDrive = (v) => v && !v.real && !['maintenance', 'offline'].includes(v.status); // live vehicles can't be dispatched by the simulation
 
   // ================================================================ Trips & Routes
   function vehicleNode(v) { const p = VF.fleetPos(v); return VF.nearestNode(p.lat, p.lon); }
@@ -126,7 +126,7 @@
     const tenDays = VF.now() - 10 * DAY;
     const dTrips = (d) => f.trips.filter((t) => t.driverId === d.id && t.start >= tenDays);
     const util = VF.mgr.utilisation();
-    const perf = vs.map((v) => ({ id: v.id, v, s: vehicleStats(v, 30) })).sort((a, b) => b.s.km - a.s.km);
+    const perf = vs.filter((v) => !v.real).map((v) => ({ id: v.id, v, s: vehicleStats(v, 30) })).sort((a, b) => b.s.km - a.s.km);
     return `<section class="stat-grid">
         ${C.stat({ icon: 'car-front', label: 'Vehicles', value: vs.length, hint: `${vs.filter((v) => v.status === 'available').length} ready now` })}
         ${C.stat({ icon: 'users', label: 'Drivers', value: ds.length, hint: `${ds.filter((d) => !d.vehicleId).length} without a vehicle` })}
@@ -140,7 +140,7 @@
           { label: 'Status', render: (v) => C.badge(v.status) },
           { label: 'Battery', render: (v) => C.battery(v.soc, { charging: v.status === 'charging', live: `v-${v.id}-w`, liveText: `v-${v.id}-soc`, size: 'sm' }) },
           { label: 'Driver', render: (v) => C.select('as-' + v.id, [['', 'Unassigned']].concat(ds.map((d) => [d.id, d.name + (d.vehicleId && d.vehicleId !== v.id ? ' · has a vehicle' : '')])), v.driverId || '', `data-chg="m-assign" data-id="${v.id}" aria-label="Driver for ${esc(v.name)}"`) },
-        ], vs, { empty: { icon: 'car-front', title: 'No vehicles yet', action: '<button class="btn primary" data-act="m-add-vehicle">Add vehicle</button>' } }))}
+        ], vs.filter((v) => !v.real), { empty: { icon: 'car-front', title: 'No vehicles yet', action: '<button class="btn primary" data-act="m-add-vehicle">Add vehicle</button>' } }))}
         ${C.card({ cls: 'span-5', title: 'Utilisation by vehicle', sub: 'Share of working hours in use, 30 days' }, C.hbars(util.slice(0, 10), { tone: 'mint' }) + (util.length > 10 ? `<p class="small muted">Lowest: ${util.slice(-3).map((u) => `${esc(u.label)} ${u.text}`).join(', ')}. Consider moving under-used vehicles to the busier depot.</p>` : ''))}
         ${C.card({ cls: 'span-12 flush', title: 'Drivers', sub: 'Employee drivers. Contact details are masked; they are kept only for dispatch.', action: `<div class="row"><div class="search-field sm">${icon('search')}<input class="input" type="search" data-inp="m-drvq" id="m-drvq" placeholder="Search drivers" value="${esc(ui.drvQ)}" aria-label="Search drivers"></div><button class="btn small primary" data-act="m-add-driver">${icon('user-plus')}Add driver</button></div>` }, C.table([
           { label: 'Driver', render: (d) => `<div class="cell-person"><span class="avatar sm">${esc(d.name.split(' ').map((p) => p[0]).join('').slice(0, 2))}</span><div><strong>${esc(d.name)}</strong><div class="small muted mono">${esc(d.license)}</div></div></div>` },
@@ -176,8 +176,8 @@
     const d = ui.enDays; const m = VF.fleetMetrics(d); const pat = chargePatterns(d);
     const bands = VF.operator('op1').pricing.bands;
     const peakKwh = pat.kwhBand[2]; const save = peakKwh * (+bands[2].price - +bands[0].price);
-    const eff = F().vehicles.map((v) => { const s = vehicleStats(v, d); return { label: v.name, value: s.per100, text: fmt.n(s.per100, 1), tone: s.per100 > M(v).eff * 115 ? 'warn' : 'teal' }; }).filter((x) => x.value > 0).sort((a, b) => a.value - b.value);
-    const byModel = {}; for (const v of F().vehicles) { const k = v.model; byModel[k] = byModel[k] || { n: 0, soh: 0 }; byModel[k].n++; byModel[k].soh += v.soh; }
+    const eff = VF.simVehicles().map((v) => { const s = vehicleStats(v, d); return { label: v.name, value: s.per100, text: fmt.n(s.per100, 1), tone: s.per100 > M(v).eff * 115 ? 'warn' : 'teal' }; }).filter((x) => x.value > 0).sort((a, b) => a.value - b.value);
+    const byModel = {}; for (const v of VF.simVehicles()) { const k = v.model; byModel[k] = byModel[k] || { n: 0, soh: 0 }; byModel[k].n++; byModel[k].soh += v.soh; }
     const litres = m.km * 0.11;
     return `<div class="toolbar">${C.seg([[7, 'Last 7 days'], [30, 'Last 30 days']], d, 'm-en-days')}<span class="small muted">${icon('info')} Sample history until vehicles are connected through VoltFleet Connect.</span></div>
       <section class="stat-grid">
@@ -219,7 +219,7 @@
   const REPORTS = {
     fleet: { title: 'Fleet performance', icon: 'truck', desc: 'Distance, utilisation, efficiency, cost per km and downtime for each vehicle.',
       build(days) {
-        const rows = F().vehicles.map((v) => { const s = vehicleStats(v, days); return [v.name, v.model, v.plate, Math.round(s.km), Math.round(s.util), s.per100.toFixed(1), s.perKm.toFixed(2), s.sessions, s.down, v.soh]; });
+        const rows = VF.simVehicles().map((v) => { const s = vehicleStats(v, days); return [v.name, v.model, v.plate, Math.round(s.km), Math.round(s.util), s.per100.toFixed(1), s.perKm.toFixed(2), s.sessions, s.down, v.soh]; });
         return { head: ['vehicle', 'model', 'plate', 'km', 'utilisation_pct', 'kwh_per_100km', 'cost_per_km_' + cur(), 'charging_sessions', 'days_off_road', 'battery_health_pct'], rows,
           summary: [['Vehicles', F().vehicles.length], ['Distance', fmt.km(sum(rows, (r) => r[3]))], ['Average utilisation', Math.round(sum(rows, (r) => r[4]) / Math.max(1, rows.length)) + '%']] };
       } },
@@ -330,7 +330,9 @@
       const row = (ic, title, status, tone, text, extra) => `<div class="integration"><span class="int-ic">${icon(ic)}</span><div class="int-main"><div class="row between"><strong>${title}</strong><span class="badge ${tone}">${status}</span></div><p class="small muted">${text}</p>${extra || ''}</div></div>`;
       body = C.card({ title: 'Integrations', sub: 'Connections that replace sample data with live data' }, `<div class="int-list">
         ${row('map', 'Map provider', mapsOn ? `Connected · ${esc(mp.providerName())}` : mp && mp.failed ? 'Tiles unavailable' : 'Not configured', mapsOn ? 'ok' : mp && mp.failed ? 'warn' : 'muted', mapsOn ? `Street maps from ${esc(mp.providerName())} (OpenStreetMap data), drawn with Leaflet. ${mp.routing() ? 'Journey lines follow real roads through OSRM; the public demo server is for testing, so run your own for production.' : 'Journey lines are straight segments between places.'} Change the provider in <code>js/config.js</code> (<code>window.VOLTFLEET_MAPS</code>): CARTO and OpenStreetMap need no key; MapTiler and Mapbox need a public key restricted to your domain.` : mp && mp.failed ? 'Map tiles could not be reached from this device, so the schematic map is shown. Check the connection or the provider settings in <code>js/config.js</code>.' : 'Maps show a schematic of Greater Accra. Set <code>window.VOLTFLEET_MAPS.provider</code> in <code>js/config.js</code> to <code>carto</code>, <code>osm</code>, <code>maptiler</code> or <code>mapbox</code>. Use only browser keys restricted to your domain.')}
-        ${row('radio-tower', 'Vehicle telematics', 'Sample data', 'warn', `${f.vehicles.length} vehicles are simulated. Connect each one through VoltFleet Connect (carmaker login or OBD-II device) to stream battery, location and odometer.`)}
+        ${(() => { const R = VF.real; const live = R.vehicles.length; const st = R.connected() ? [`${live} live`, 'ok'] : R.ready() ? (R.server === false ? ['Server needs secrets', 'warn'] : ['Ready to connect', 'teal']) : ['Not configured', 'muted'];
+          return row('radio-tower', 'Vehicle telematics · Smartcar', st[0], st[1], `${R.connected() ? `${live} vehicle${live === 1 ? '' : 's'} stream battery, range, charging, odometer and location through Smartcar API v3 (${esc(R.modeLabel())}), shown on this device only.` : 'Connect real vehicles from 40+ brands through the owner’s carmaker account. The Smartcar secret stays in a Supabase Edge Function; this app only holds a public client ID.'} The other ${VF.simVehicles().length} vehicles are sample data.`,
+            `<div class="card-actions">${R.connectButton(R.connected() ? '' : 'primary')}<button class="btn ghost" data-act="sc-setup">${icon('list')}Setup steps</button>${R.connected() ? `<button class="btn ghost" data-act="sc-disconnect">${icon('unplug')}Disconnect</button>` : ''}</div>`); })()}
         ${row('plug-zap', 'Charging network', 'Connected', 'ok', `${VF.state.stations.length} stations from ${VF.state.operators.length} operators over OCPP. Sessions started here appear in the operators’ consoles.`)}
         ${row('cloud', 'Cross-device sync', esc(VF.cloud ? VF.cloud.label() : 'This device only'), VF.cloud && /live/.test(VF.cloud.status) ? 'ok' : 'muted', 'The demo world is shared through Supabase so changes show on every device. Settings live in <code>js/config.js</code> (publishable key only).')}
         ${row('mail', 'Email notifications', 'Not configured', 'muted', 'Add an email provider (for example a transactional email service) on the server side. API keys must stay on the server, never in this web app.')}
@@ -420,7 +422,7 @@
       if (!await C.confirm({ title: `Delete ${n} read notification${n === 1 ? '' : 's'}?`, body: 'Unread notifications are kept.', confirmLabel: 'Delete', danger: true, icon: 'trash-2' })) return;
       F().notices = F().notices.filter((x) => !x.read); VF.save(); VF.toast('Read notifications cleared'); VF.rerender();
     },
-    'm-settab': reroute((el) => { ui.setTab = el.dataset.k; }),
+    'm-settab': reroute((el) => { ui.setTab = el.dataset.k; if (el.dataset.k === 'integrations' && VF.real.server == null) VF.real.checkServer().then(() => VF.rerender()); }),
     'm-theme': reroute((el) => { VF.theme.set(el.dataset.k); }),
     'm-add-depot': () => C.modal({ title: 'Add depot', submitLabel: 'Add depot', body: `<div class="form-grid-2">${C.field('Depot name', C.input('name', '', 'required maxlength="40"'))}${C.field('Area', C.select('node', placeOpts(), 'tema'))}</div>`,
       onSubmit(d) { if (d.name.trim().length < 3) return 'Give the depot a name.'; F().depots.push({ id: 'dp' + (F().seq++) + Math.floor(Math.random() * 90 + 10), name: d.name.trim(), node: d.node }); VF.save(); VF.toast('Depot added'); VF.rerender(); return null; } }),

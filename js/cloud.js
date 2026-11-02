@@ -25,7 +25,7 @@
     return btoa(s);
   }
   async function pack(state) {
-    const json = JSON.stringify(state);
+    const json = VF.stateJSON ? VF.stateJSON(state) : JSON.stringify(state);
     if (!hasGzip) return 'j:' + json;
     const stream = new Blob([json]).stream().pipeThrough(new CompressionStream('gzip'));
     return 'gz:' + toB64(await new Response(stream).arrayBuffer());
