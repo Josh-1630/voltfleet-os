@@ -434,7 +434,7 @@ window.VF = (function () {
     c.session = {
       id: 'x' + (++VF.state.seq), start: t || VF.now(), kwh: 0, cost: 0, kw: 0,
       model: info.model, oem: m.oem, battery: m.kwh, soc: info.soc, socStart: info.soc, target: info.target || 80,
-      driverId: info.driverId || null, bookingId: info.bookingId || null, vehicleId: info.vehicleId || null,
+      driverId: info.driverId || null, bookingId: info.bookingId || null, vehicleId: info.vehicleId || null, fleet: info.fleet || null,
     };
     c.status = 'Charging'; c.reservedFor = null; c.until = null;
     if (!quiet) ocpp(station.id, c.id, '←', 'StartTransaction', `${info.bookingId ? 'booking ' + VF.booking(info.bookingId).code : 'walk-in'} · ${m.oem}`);
@@ -445,7 +445,7 @@ window.VF = (function () {
     const now = VF.now();
     const b = se.bookingId && VF.booking(se.bookingId);
     const fee = b ? +VF.operator(station.operatorId).pricing.bookingFee : 0;
-    VF.state.sessions.unshift({ id: se.id, stationId: station.id, operatorId: station.operatorId, connectorId: c.id, type: c.type, model: se.model, oem: se.oem, driverId: se.driverId, bookingId: se.bookingId, start: se.start, end: now, kwh: se.kwh, cost: se.cost + fee, socStart: se.socStart, socEnd: se.soc, status: reason || 'completed' });
+    VF.state.sessions.unshift({ id: se.id, stationId: station.id, operatorId: station.operatorId, connectorId: c.id, type: c.type, model: se.model, oem: se.oem, driverId: se.driverId, bookingId: se.bookingId, start: se.start, end: now, kwh: se.kwh, cost: se.cost + fee, socStart: se.socStart, socEnd: se.soc, vehicleId: se.vehicleId || null, fleet: se.fleet || null, status: reason || 'completed' });
     if (VF.state.sessions.length > 800) VF.state.sessions.length = 800;
     ocpp(station.id, c.id, '←', 'StopTransaction', `${fmt.kwh(se.kwh)} · ${reason || 'EVDisconnected'}`);
     c.session = null;
@@ -457,6 +457,7 @@ window.VF = (function () {
       const v = VF.vehicle(se.vehicleId);
       if (v) { v.soc = se.soc; v.chargingAt = null; if (v.trip && !v.trip.done) { v.status = 'driving'; v.trip.stopKm = null; v.trip.bookingId = null; } else v.status = 'parked'; }
     }
+    if (VF.onSessionEnd) VF.onSessionEnd(se, station, c, reason);
   }
   VF.endSession = endSession;
   // When will this connector be free (ms)? null if out of service.
@@ -704,7 +705,7 @@ window.VF = (function () {
         const e = se.kw * dtMin / 60;
         se.kwh += e; se.cost += e * priceAt(st.operatorId, now, c.type);
         se.soc = Math.min(100, se.soc + e * 0.93 / se.battery * 100);
-        if (se.vehicleId) { const v = VF.vehicle(se.vehicleId); if (v) v.soc = se.soc; }
+        if (se.vehicleId) { const v = VF.vehicle(se.vehicleId) || (VF.fleetVehicle && VF.fleetVehicle(se.vehicleId)); if (v) v.soc = se.soc; }
         if (se.soc >= se.target) {
           endSession(st, c);
           c.status = 'Finishing'; c.until = now + 3 * MIN;
@@ -960,6 +961,10 @@ window.VF = (function () {
         `<rect x="-11" y="-11" width="22" height="22" rx="6"/><path d="M1.5 -7 -5 1.5h4.5l-1.2 6 6.6-8.6h-4.5z"/>` +
         (x.badge != null ? `<g class="badge" transform="translate(11,-11)"><circle r="8"/><text y="3.5" text-anchor="middle">${x.badge}</text></g>` : '') +
         `<text class="stn-label" y="28" text-anchor="middle">${esc(x.label || x.st.name)}</text></g>`;
+    }
+    for (const vh of o.vehicles || []) {
+      const [x, y] = proj(vh.lat, vh.lon);
+      s += `<g class="fv ${vh.cls || ''}" transform="translate(${x.toFixed(1)},${y.toFixed(1)})"${vh.act ? ` data-act="${vh.act}" data-id="${esc(vh.id)}" tabindex="0" role="button"` : ''}><title>${esc(vh.title || vh.label || '')}</title><circle class="halo" r="13"/><circle class="dot" r="7"/>${vh.label ? `<text x="11" y="-9">${esc(vh.label)}</text>` : ''}</g>`;
     }
     if (o.vehicle) {
       const [x, y] = proj(o.vehicle.lat, o.vehicle.lon);

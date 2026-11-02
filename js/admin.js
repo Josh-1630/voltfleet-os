@@ -126,8 +126,8 @@
   function pageUsers() {
     const s = VF.state; const q = ui.q.trim().toLowerCase();
     const list = s.users.filter((u) => (ui.roleFilter === 'all' || u.role === ui.roleFilter) && (!q || (u.role + (u.driverId ? VF.pseudo(u.driverId) : '') + (u.operatorId ? VF.operator(u.operatorId).name : '')).toLowerCase().includes(q)));
-    const roleLabel = { driver: 'Driver', operator: 'Operator', admin: 'Super admin', developer: 'Developer' };
-    return `<section class="panel"><div class="panel-head"><div class="row"><div class="seg" role="group">${[['all', 'All'], ['driver', 'Drivers'], ['operator', 'Operators'], ['developer', 'Developers'], ['admin', 'Admins']].map(([k, l]) => `<button type="button" data-act="ad-role" data-k="${k}" aria-pressed="${ui.roleFilter === k}">${l}</button>`).join('')}</div>
+    const roleLabel = { manager: 'Fleet manager', driver: 'Driver', operator: 'Operator', admin: 'Super admin', developer: 'Developer' };
+    return `<section class="panel"><div class="panel-head"><div class="row"><div class="seg" role="group">${[['all', 'All'], ['manager', 'Fleet'], ['driver', 'Drivers'], ['operator', 'Operators'], ['developer', 'Developers'], ['admin', 'Admins']].map(([k, l]) => `<button type="button" data-act="ad-role" data-k="${k}" aria-pressed="${ui.roleFilter === k}">${l}</button>`).join('')}</div>
         <input class="input" type="search" id="ad-q" data-inp="ad-q" placeholder="Search by ID, role or operator" value="${esc(ui.q)}"></div>
         <span class="faint small">${icon('lock')} Masked by default. Revealing is logged.</span></div>
       <div class="table-wrap"><table class="t"><thead><tr><th>ID</th><th>Name</th><th>Role</th><th>Email</th><th>Phone</th><th>Joined</th><th>Status</th><th></th></tr></thead><tbody>

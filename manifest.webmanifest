@@ -1,10 +1,10 @@
 {
   "name": "VoltFleet OS",
   "short_name": "VoltFleet",
-  "description": "The operating system for electric vehicle fleets.",
-  "start_url": "./#dashboard",
+  "description": "Manage an electric fleet: vehicles, charging, journeys and energy.",
+  "start_url": "./",
   "display": "standalone",
-  "background_color": "#0A1312",
-  "theme_color": "#0E1B1A",
+  "background_color": "#F8FAFC",
+  "theme_color": "#0F766E",
   "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
 }

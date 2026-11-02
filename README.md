@@ -1,9 +1,10 @@
-# VoltFleet OS — MVP
+# VoltFleet OS — EV Manager
 
-One platform that connects **EV drivers**, **their vehicles** (any make) and **charging stations**, plus **VoltFleet Connect**, an API that other companies build on. It has four role-based apps:
+One platform that connects **EV fleets**, **drivers**, **their vehicles** (any make) and **charging stations**, plus **VoltFleet Connect**, an API that other companies build on. It has five role-based apps that share one design system (Electric Teal & Fresh White, light by default with a dark mode):
 
 | App | Who | What it does |
 | --- | --- | --- |
+| **EV Manager** (default sign-in) | Fleet managers | **Dashboard** with 8 live KPIs (vehicles, active, average battery, energy, charging cost, range, CO₂ saved, available stations), vehicle overview, live map, charging activity, energy/cost/CO₂ charts, utilisation and battery health, quick actions. **My Vehicles** (grid/table, search and filters, detail with battery health, performance, maintenance history and registration, add/remove vehicles). **Charging Stations** (list/map, connector, speed and availability filters, live tariffs, distance, directions, send a vehicle). **Charging Sessions** (live and completed, energy, duration, cost, stop charging, CSV). **Trips & Routes** (journey planner with route map, energy estimate, charging-stop suggestion and dispatch; live journeys; history). **Fleet Management** (depots, vehicle allocation, drivers, utilisation, performance). **Energy Analytics** (consumption vs charged, charging by hour and tariff band, cost, efficiency per vehicle, battery health, sustainability). **Reports** (fleet performance, energy, charging expenditure, sustainability, maintenance; preview and CSV). **Notifications** (filters, read/delete, alert preferences). **Settings** (profile, theme, organisation and depots, integrations, data export and reset). |
 | **Driver app** (mobile-first) | EV drivers | Live battery %, range, and driving time left on this charge. Trip progress with battery % on arrival. A warning when the driver won't make it. Chargers on the route, filtered to plugs that fit the car. **One tap to book**: checks live availability of every compatible connector along the route and holds a slot for the arrival time, so there's no queue. Live charging view, bookings, vehicle data, and privacy controls. |
 | **Operator console** (CSMS) | Charge point operators | Live view of every station and connector (OCPP states), with power, energy and time per session. Remote commands (stop, unlock, reset, enable/disable). Arriving bookings and a connector timeline. Booking rules, time-of-use prices, and smart charging under each site's grid limit (booked sessions keep full power). Reports and the OCPP message log. |
 | **VoltFleet Connect** (developer portal) | Fintechs, insurers, ride-hailing, energy companies | One API for any EV make (battery, charging, start/stop charge, odometer, tyres, location, lock). Apps & keys (client ID/secret, rotate), test vehicles, an API explorer with real error codes, a VIN compatibility check, webhooks (`charge.started`, `charge.completed`, `battery.low`, `vehicle.connected/disconnected`) with signed deliveries, docs and per-vehicle pricing. Drivers grant access through the **Connect consent flow** (pick brand → sign in with the carmaker or pair a plug-in device → approve each permission) and can revoke it in the driver app. |
@@ -22,7 +23,16 @@ One platform that connects **EV drivers**, **their vehicles** (any make) and **c
 
 ## What's real and what's simulated
 
-All data is simulated so the product can be demonstrated end to end: 10 stations, 2 operators, 29 drivers, 14 vehicle models, and a demo clock running at 20× speed (adjustable under Admin → System). Everything is stored in the browser. The vehicle make data coverage shown is *expected* and must be confirmed for each integration.
+All data is simulated so the product can be demonstrated end to end: 10 stations, 2 operators, 29 drivers, 14 vehicle models, a 16-vehicle company fleet (GreenLine Logistics, 14 employee drivers, 2 depots), and a demo clock running at 20× speed (adjustable under Admin → System). The vehicle make data coverage shown is *expected* and must be confirmed for each integration.
+
+Sample data is kept apart from the product code: `js/fleet.js` holds the fleet seed, simulation and the 30-day sample history (marked `SAMPLE DATA`); the pages in `js/manager.js` and `js/manager-more.js` only read it through `VF.fleet*` functions, so a real telematics/OCPP backend can replace that one file. Fleet vehicles charge at the same simulated public stations, so their sessions appear in operators' consoles as "Fleet · GreenLine Logistics" (never a driver name).
+
+### Integrations that need configuration
+
+- **Street maps:** maps are a schematic of Greater Accra. To use a map provider, set `window.VOLTFLEET_MAPS = { provider, key }` in `js/config.js` with a browser key restricted to your domain, and render it where `VF.mapSVG` is called (`VF.mgr.fleetMap` for the EV Manager).
+- **Vehicle telematics:** connect vehicles through VoltFleet Connect (carmaker login or OBD-II device); replace the simulation in `js/fleet.js`.
+- **Email notifications:** needs a server-side email provider. Keep its API key on the server, never in this web app.
+- **CO₂ factors:** `VF.CO2` in `js/fleet.js` uses approximate diesel and Ghana grid factors; replace them with audited figures before publishing.
 
 ## Shared demo state (Supabase)
 
@@ -53,12 +63,16 @@ No build step. Upload this folder to any static host:
 
 ## Files
 
-- `index.html`, `styles.css`
+- `index.html`, `styles.css` (design tokens, shell, components, responsive rules; light and dark themes)
 - `js/core.js`: data model, demo clock and live feed, vehicle catalog, booking engine, load balancing, privacy layer, map and charts
-- `js/driver.js`, `js/operator.js`, `js/admin.js`: the three apps
+- `js/icons.js`: a subset of [Lucide](https://lucide.dev) icons (ISC licence, `js/vendor/lucide.LICENSE`)
+- `js/ui.js`: reusable components (metric cards, status badges, tables, charts, battery bars, dialogs, form fields) and the theme switch
+- `js/fleet.js`: EV Manager data layer and simulation (sample data)
+- `js/manager.js`, `js/manager-more.js`: the EV Manager pages
+- `js/driver.js`, `js/operator.js`, `js/admin.js`: the driver, operator and admin apps
 - `js/connect.js`: VoltFleet Connect (developer portal, consent flow, simulated API and webhooks)
 - `js/cloud.js`, `js/config.js`: cross-device sync through Supabase (`js/vendor/` holds the MIT-licensed supabase-js client)
-- `js/app.js`: sign-in, role-based routing, live updates
+- `js/app.js`: sign-in, the shell (collapsible sidebar, breadcrumb, global search, notifications, account menu), role-based routing, live updates
 - `sw.js`, `manifest.webmanifest`: offline use and install to home screen
 
 ## Next steps to production

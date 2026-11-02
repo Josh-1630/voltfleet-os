@@ -42,7 +42,7 @@
     let detail = '';
     if (se) {
       const bk = se.bookingId && VF.booking(se.bookingId);
-      detail = `<div class="small"><strong>${esc(se.model)}</strong> · ${esc(se.driverId ? who(se.driverId) : 'Walk-in guest')}${bk ? ` · <span class="mono">${esc(bk.code)}</span>` : ''}</div>
+      detail = `<div class="small"><strong>${esc(se.model)}</strong> · ${esc(se.driverId ? who(se.driverId) : se.fleet ? `Fleet · ${se.fleet}` : 'Walk-in guest')}${bk ? ` · <span class="mono">${esc(bk.code)}</span>` : ''}</div>
         <div class="small num muted"><span data-live="${c.id}-soc">${sessionSoc(c)}</span> · <span data-live="${c.id}-kw">${fmt.kw(se.kw)}</span>${se.limited ? ' <span class="pill warn plain">limited</span>' : ''} · <span data-live="${c.id}-kwh">${fmt.kwh(se.kwh)}</span> · <span data-live="${c.id}-el">${elapsed(se)}</span></div>`;
     } else if (c.status === 'Faulted') detail = `<div class="small bad-text">${esc(c.error || 'Fault')}</div>`;
     else if (res) detail = `<div class="small">Held for <span class="mono">${esc(res.code)}</span> · ${esc(res.model)} · arrives ${bookingEta(res)}</div>`;
@@ -120,7 +120,7 @@
       <section class="panel"><div class="panel-head"><h2>Connectors</h2><span class="faint small">Commands are sent over OCPP and logged</span></div><div class="panel-body conn-list">${st.connectors.map(connRow).join('')}</div></section>
       <section class="panel"><div class="panel-head"><h2>Recent sessions</h2><button class="btn small" data-act="op-csv" data-scope="station">${icon('download')}CSV</button></div>
         <div class="table-wrap"><table class="t"><thead><tr><th>Ended</th><th>Connector</th><th>Vehicle</th><th>Driver</th><th>Booking</th><th class="r">Energy</th><th class="r">Revenue</th></tr></thead><tbody>
-        ${today.map((x) => `<tr><td class="num">${VF.fmtTime(x.end)}</td><td>${esc(VF.connector(x.connectorId).label)} · ${esc(x.type)}</td><td>${esc(x.model)}</td><td class="mono small">${esc(x.driverId ? who(x.driverId) : 'Walk-in guest')}</td><td>${x.bookingId ? pill('accent plain', 'Booked') : '<span class="faint">Walk-in</span>'}</td><td class="r num">${fmt.kwh(x.kwh)}</td><td class="r num">${fmt.money(x.cost)}</td></tr>`).join('') || '<tr><td colspan="7" class="empty">No sessions yet today.</td></tr>'}
+        ${today.map((x) => `<tr><td class="num">${VF.fmtTime(x.end)}</td><td>${esc(VF.connector(x.connectorId).label)} · ${esc(x.type)}</td><td>${esc(x.model)}</td><td class="mono small">${esc(x.driverId ? who(x.driverId) : x.fleet ? `Fleet · ${x.fleet}` : 'Walk-in guest')}</td><td>${x.bookingId ? pill('accent plain', 'Booked') : '<span class="faint">Walk-in</span>'}</td><td class="r num">${fmt.kwh(x.kwh)}</td><td class="r num">${fmt.money(x.cost)}</td></tr>`).join('') || '<tr><td colspan="7" class="empty">No sessions yet today.</td></tr>'}
         </tbody></table></div></section>`;
   }
   function drawTimeline(slot) {
