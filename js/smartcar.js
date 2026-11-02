@@ -230,7 +230,7 @@
     },
   });
   document.addEventListener('submit', (e) => {
-    if (e.target.id !== 'sc-name-form') return;
+    if (e.target.getAttribute('id') !== 'sc-name-form') return;
     e.preventDefault();
     const name = (new FormData(e.target).get('name') || '').toString().trim();
     if (!name) { VF.toast('Enter a name'); return; }

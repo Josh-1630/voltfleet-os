@@ -506,7 +506,7 @@
   });
   Object.assign(VF.INP, { 'm-vq': (el) => { ui.vq = el.value; VF.rerender(); } });
   document.addEventListener('submit', (e) => {
-    if (e.target.id !== 'm-reg-form') return;
+    if (e.target.getAttribute('id') !== 'm-reg-form') return;
     e.preventDefault();
     const d = Object.fromEntries(new FormData(e.target).entries()); const box = document.getElementById('m-reg-error');
     const err = !d.name.trim() ? 'Give the vehicle a display name.' : !/^[A-Z]{1,3}\s?\d{1,5}-\d{2}$/i.test(d.plate.trim()) ? 'Enter the plate like GR 1234-25.' : !/^[A-HJ-NPR-Z0-9]{11,17}$/i.test(d.vin.trim()) ? 'A VIN has 11 to 17 letters and numbers, without I, O or Q.' : '';

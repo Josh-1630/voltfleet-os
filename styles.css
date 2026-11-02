@@ -1249,6 +1249,47 @@ td .select { min-width: 160px; }
 .dialog .steps { padding-left: 20px; }
 .dialog .steps li { gap: 4px; }
 
+
+/* real chargers (OCPP) */
+.oc-cp { gap: 0; padding: 0; overflow: hidden; }
+.oc-cp.online { border-color: color-mix(in srgb, var(--ok) 30%, var(--line)); }
+.oc-cp-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; padding: 16px 20px; }
+.oc-cp-title { display: flex; gap: 12px; align-items: flex-start; min-width: 0; }
+.oc-cp-title h3 { font-size: 15.5px; }
+.oc-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--faint); margin-top: 6px; flex: none; }
+.oc-dot.on { background: var(--ok); box-shadow: 0 0 0 4px var(--ok-soft); }
+.oc-wait { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 14px 20px; border-top: 1px solid var(--line); background: var(--surface-2); }
+.oc-wait > svg { width: 20px; height: 20px; color: var(--accent); }
+.oc-conns { display: flex; flex-direction: column; }
+.oc-conn { display: grid; grid-template-columns: minmax(150px, 1fr) minmax(220px, 1.4fr) auto; grid-template-areas: "id meter act" "tx tx tx"; gap: 6px 16px; align-items: center; padding: 14px 20px; border-top: 1px solid var(--line); }
+.oc-conn-id { grid-area: id; display: flex; flex-direction: column; align-items: flex-start; gap: 5px; }
+.oc-conn-meter { grid-area: meter; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.oc-conn-meter span { display: flex; flex-direction: column; }
+.oc-conn-meter b { font-size: 16px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.oc-conn-meter small { font-size: 11.5px; color: var(--muted); }
+.oc-conn-tx { grid-area: tx; }
+.oc-conn-tx:empty { display: none; }
+.oc-conn-act { grid-area: act; display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
+.oc-cp-foot { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 14px 10px 20px; border-top: 1px solid var(--line); background: var(--surface-2); }
+.oc-cmds, .oc-tags { list-style: none; margin: 0; padding: 0; }
+.oc-cmds li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; padding: 10px 20px; border-top: 1px solid var(--line); align-items: center; }
+.oc-cmds li .mono { grid-column: 1 / -1; color: var(--muted); }
+.oc-cmds li strong { font-size: 13.5px; font-weight: 600; }
+.oc-cmds li .small.muted { grid-column: 1; }
+.oc-tags li { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: 10px; align-items: center; padding: 6px 0; border-top: 1px solid var(--line); }
+.oc-tags li:first-child { border-top: 0; }
+.oc-log { max-height: 420px; overflow: auto; padding: 0 20px 14px; border-top: 1px solid var(--line); }
+.oc-log .log-row { grid-template-columns: 62px 44px minmax(0, 1fr); }
+.oc-payload { display: block; font-family: var(--font-mono); font-size: 11px; overflow-wrap: anywhere; }
+.oc-simlog { display: flex; flex-direction: column; gap: 3px; padding: 10px 12px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--line); font-family: var(--font-mono); font-size: 11.5px; min-height: 60px; }
+.oc-detail { display: flex; flex-direction: column; gap: 5px; margin-bottom: 10px; }
+.oc-detail code { display: block; padding: 8px 10px; border-radius: 8px; background: var(--surface-2); border: 1px solid var(--line); overflow-wrap: anywhere; font-size: 12.5px; }
+@media (max-width: 720px) {
+  .oc-conn { grid-template-columns: minmax(0, 1fr); grid-template-areas: "id" "meter" "tx" "act"; padding: 14px 16px; }
+  .oc-conn-act { justify-content: flex-start; }
+  .oc-wait { grid-template-columns: 22px minmax(0, 1fr); } .oc-wait .btn { grid-column: 1 / -1; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; }
 }

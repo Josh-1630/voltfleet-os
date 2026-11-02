@@ -182,7 +182,7 @@
     'dlg-close': () => { if (dialogResolve) finish(false); else C.closeDialog(); },
   });
   document.addEventListener('submit', (e) => {
-    if (e.target.id !== 'dlg-form' || !formHandler) return;
+    if (e.target.getAttribute('id') !== 'dlg-form' || !formHandler) return;
     e.preventDefault();
     const data = Object.fromEntries(new FormData(e.target).entries());
     const err = formHandler(data, e.target);

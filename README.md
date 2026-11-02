@@ -30,6 +30,9 @@ Sample data is kept apart from the product code: `js/fleet.js` holds the fleet s
 ### Integrations that need configuration
 
 - **Street maps:** maps use Leaflet with CARTO's light and dark street tiles (OpenStreetMap data, no key), and journey lines follow real roads through OSRM. Both are set in `window.VOLTFLEET_MAPS` in `js/config.js`. CARTO's free basemaps suit low-traffic and non-commercial use; for a commercial launch take a CARTO licence or switch `provider` to `maptiler` or `mapbox` with a public key restricted to your domain. The public OSRM server is for testing only: run your own OSRM, or set `routing: 'none'`. If tiles can't load (offline or blocked), the app falls back to the built-in schematic map.
+- **Real chargers (OCPP 1.6J):** the Supabase Edge Function `supabase/functions/ocpp` is a working central system. Chargers connect to `wss://kwxadepnkyxgspvvqbzo.supabase.co/functions/v1/ocpp/<charge-point-id>` with subprotocol `ocpp1.6` and HTTP Basic auth (security profile 1). It handles BootNotification, Heartbeat, StatusNotification, Authorize, Start/StopTransaction, MeterValues and more, and sends remote start/stop, unlock, reset, availability, trigger, configuration, reservations and charging-profile power limits. In the operator console, **Real chargers** creates a charging network (its access key stays on that device), registers chargers (each gets its own password, shown once), shows live status, power, energy and battery level, the command results and the full OCPP message log, and manages authorised cards (masked on screen). A **simulated charger** runs in the browser (or `node tools/ocpp-charger-sim.mjs <url> <id> <password>`) so you can try everything without hardware. Real charger data stays in a private database schema and never enters the shared demo.
+  - **Hosting limit:** Supabase Edge Functions end each connection after about 400 seconds. The server closes cleanly at 370 seconds, chargers reconnect within seconds, and no state is lost (everything is in Postgres; commands wait for the next connection). For production, run the same function on a long-lived Deno host: `SUPABASE_DB_URL=... deno run -A supabase/functions/ocpp/index.ts`.
+  - **Next:** OCPP 2.0.1, security profiles 2–3 (TLS client certificates), firmware updates and diagnostics, and linking real chargers to stations and bookings in the driver app.
 - **Vehicle telematics (Smartcar):** real vehicles connect through Smartcar API v3. The Supabase Edge Function `supabase/functions/smartcar` holds the secret, runs the Connect hand-off, polls readings (cached 60 s) and sends charge commands; the browser holds only a random access key. Live vehicles appear in EV Manager **only on the device that connected them**: they are never written to the shared demo world (`VF.stateJSON`). To switch it on:
   1. Create an application at dashboard.smartcar.com, add this site's address (for example `https://josh-1630.github.io/voltfleet-os/`) as a redirect URI, and enable vehicle info, VIN, battery, charge, location, odometer and charge control.
   2. In Supabase → Edge Functions → Secrets add `SMARTCAR_CLIENT_ID` and `SMARTCAR_CLIENT_SECRET` (the API credentials). Optionally `ALLOWED_ORIGINS`.
@@ -72,6 +75,8 @@ No build step. Upload this folder to any static host:
 - `js/icons.js`: a subset of [Lucide](https://lucide.dev) icons (ISC licence, `js/vendor/lucide.LICENSE`)
 - `js/ui.js`: reusable components (metric cards, status badges, tables, charts, battery bars, dialogs, form fields) and the theme switch
 - `js/fleet.js`: EV Manager data layer and simulation (sample data)
+- `js/ocpp.js`, `js/ocpp-sim.js`: Real chargers page in the operator console, and the simulated OCPP 1.6J charger; `tools/ocpp-charger-sim.mjs`: the same simulator from a terminal
+- `supabase/functions/ocpp/`: the OCPP 1.6J central system (`csms.ts` protocol, `server.ts` WebSocket and management API, `index.ts` Postgres store)
 - `js/smartcar.js`: live vehicles through Smartcar (connect, poll, charge commands, live vehicle page)
 - `supabase/functions/smartcar/`: the Smartcar Edge Function; `supabase/migrations/`: its private tables
 - `docs/market-scan.md`: vehicle data APIs, XCharge and other charger and charging-software vendors
@@ -86,7 +91,7 @@ No build step. Upload this folder to any static host:
 ## Next steps to production
 
 1. **Backend and auth.** Move from the shared demo world to real Supabase tables with row-level security per role and operator. Phone/email OTP for drivers; SSO + MFA for staff.
-2. **OCPP 1.6J / 2.0.1 central system.** `ReserveNow`, `RemoteStart/Stop`, `SetChargingProfile` and `StatusNotification` drive the booking and load-balancing features shown here.
+2. **OCPP.** A 1.6J central system is live (see above). Next: OCPP 2.0.1, a long-lived host, and driving bookings and load balancing from real chargers.
 3. **VoltFleet Connect for real.** An OAuth 2.0 authorization server, a public REST API with rate limits, signed webhooks, and usage-based billing.
 4. **Vehicle data adapters.** Smartcar is connected for supported brands and countries; add an OBD-II dongle path for Chinese-spec imports and vehicles Smartcar doesn't reach. Each adapter outputs the unified vehicle record shown in Admin → Vehicles & OEMs.
 5. **Payments and messaging.** Mobile money and card payments for booking and no-show fees; SMS/push notifications.

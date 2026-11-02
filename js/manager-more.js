@@ -451,7 +451,7 @@
   });
   Object.assign(VF.INP, { 'm-drvq': (el) => { ui.drvQ = el.value; VF.rerender(); } });
   document.addEventListener('submit', (e) => {
-    const id = e.target.id; if (id !== 'm-profile-form' && id !== 'm-org-form') return;
+    const id = e.target.getAttribute('id'); if (id !== 'm-profile-form' && id !== 'm-org-form') return;
     e.preventDefault();
     const d = Object.fromEntries(new FormData(e.target).entries());
     const box = document.getElementById(id === 'm-profile-form' ? 'm-profile-error' : 'm-org-error');

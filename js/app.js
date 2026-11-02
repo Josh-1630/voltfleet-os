@@ -430,7 +430,7 @@
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && (shellUi.pop || shellUi.drawer)) { closePops(); setDrawer(false); }
       if (e.key === '/' && current && !/^(INPUT|SELECT|TEXTAREA)$/.test((document.activeElement || {}).tagName || '') && $('#g-search') && document.getElementById('dialog')?.hidden !== false) { e.preventDefault(); $('#g-search').focus(); }
-      if (e.key === 'Enter' && e.target.id === 'g-search') { e.preventDefault(); if (shellUi.results.length) goResult(0); }
+      if (e.key === 'Enter' && e.target.getAttribute('id') === 'g-search') { e.preventDefault(); if (shellUi.results.length) goResult(0); }
       if ((e.key === 'Enter' || e.key === ' ') && e.target.matches && e.target.matches('[role="button"][data-act]:not(button):not(g)')) { e.preventDefault(); e.target.click(); }
       if (e.key === 'Escape' && VF.ui.connect.flow) { VF.ui.connect.flow = null; VF.renderConnect(); }
       if (e.key === 'Escape' && VF.ui.driver.sheet) { VF.ui.driver.sheet = null; VF.renderSheet(); }
@@ -442,7 +442,7 @@
     VF.onRemoteState = () => { VF.ensureConnect(); VF.ensureFleet(); if (current) refreshUi(); else if (!role() && $('.auth')) { /* sign-in page: nothing live to refresh */ } };
     if (VF.cloud && VF.cloud.start) VF.cloud.start();
     window.addEventListener('pagehide', () => { try { const l = JSON.parse(localStorage.getItem(LEADER_KEY) || 'null'); if (l && l.id === TAB_ID) localStorage.removeItem(LEADER_KEY); } catch (e) { /* ignore */ } });
-    document.addEventListener('submit', (e) => { if (e.target.id === 'login-form') { e.preventDefault(); signInByEmail(); } });
+    document.addEventListener('submit', (e) => { if (e.target.getAttribute('id') === 'login-form') { e.preventDefault(); signInByEmail(); } });
     window.addEventListener('resize', VF.debounce(drawCharts, 150));
     routeChange();
     if (VF.real) VF.real.handleRedirect().then((back) => { if (!back && VF.real.connected()) VF.real.poll(); });
