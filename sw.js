@@ -1,5 +1,5 @@
 // Offline cache for the app shell, so dispatchers keep working through connectivity drops.
-const CACHE = 'voltfleet-os-v11';
+const CACHE = 'voltfleet-os-v12';
 const SHELL = ['./', 'index.html', 'styles.css', 'js/core.js', 'js/icons.js', 'js/ui.js', 'js/install.js', 'js/vendor/qrcode-generator-1.4.4.js', 'js/fleet.js', 'js/config.js', 'js/vendor/leaflet-1.9.4.js', 'js/vendor/leaflet-1.9.4.css', 'js/map.js', 'js/driver.js', 'js/operator.js', 'js/ocpp-sim.js', 'js/ocpp.js', 'js/admin.js', 'js/connect.js', 'js/manager.js', 'js/manager-more.js', 'js/smartcar.js', 'js/vendor/supabase-2.118.0.js', 'js/cloud.js', 'js/app.js', 'manifest.webmanifest', 'icon.svg', 'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png', 'icons/apple-touch-icon.png'];
 self.addEventListener('install', (e) => { e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', (e) => {
