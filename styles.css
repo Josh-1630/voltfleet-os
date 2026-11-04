@@ -1564,6 +1564,89 @@ td .select { min-width: 160px; }
 .nav-wrap .nav-link[aria-current="page"] { background: transparent; }
 .nav-wrap .nav-link[aria-current="page"]::before { display: none; }
 
+
+/* ======================================================================
+   Driver: live battery hero, moving car on the trip, charging flow
+   ====================================================================== */
+@keyframes orbit { to { transform: rotate(360deg); } }
+@keyframes ring-glow { 0%, 100% { filter: drop-shadow(0 0 4px rgba(94, 234, 212, .45)); } 50% { filter: drop-shadow(0 0 14px rgba(163, 230, 53, .75)); } }
+@keyframes road { to { background-position: -24px 0; } }
+@keyframes cf-move { 0% { left: 0; opacity: 0; } 15% { opacity: 1; } 85% { opacity: 1; } 100% { left: calc(100% - 8px); opacity: 0; } }
+@keyframes btn-glow { 0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 45%, transparent), var(--shadow-sm); } 50% { box-shadow: 0 0 0 8px transparent, 0 8px 24px color-mix(in srgb, var(--accent) 35%, transparent); } }
+@keyframes bob { 0%, 100% { transform: translate(50%, -50%) translateY(0); } 50% { transform: translate(50%, -50%) translateY(-2px); } }
+.d-battery { border-radius: 20px; padding: 18px 20px; color: #E6FFFB; background: radial-gradient(120% 140% at 0% 0%, #0F766E 0%, #0B3B38 50%, #061B1A 100%); box-shadow: 0 18px 44px rgba(6, 27, 26, .26); overflow: hidden; display: flex; flex-direction: column; gap: 6px; align-self: stretch; }
+.d-battery > * { position: relative; z-index: 1; }
+.db-head { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; align-items: center; }
+.db-status { font-size: 12px; color: rgba(204, 251, 241, .72); }
+.db-ring { position: relative; width: min(220px, 80%); aspect-ratio: 1; margin: 2px auto 0; }
+.db-ring svg { width: 100%; height: 100%; overflow: visible; }
+.db-orbit { fill: none; stroke: rgba(153, 246, 228, .22); stroke-width: 1.2; stroke-dasharray: 2 7; transform-box: fill-box; transform-origin: center; animation: orbit 30s linear infinite; }
+.db-track { fill: none; stroke: rgba(255, 255, 255, .09); stroke-width: 12; stroke-linecap: round; }
+.db-fill { fill: none; stroke: url(#db-g); stroke-width: 12; stroke-linecap: round; transition: stroke-dasharray .9s cubic-bezier(.2,.7,.2,1); filter: drop-shadow(0 0 6px rgba(94, 234, 212, .5)); }
+.db-fill.mid { stroke: #F59E0B; filter: drop-shadow(0 0 6px rgba(245, 158, 11, .5)); }
+.db-fill.lo { stroke: #F87171; filter: drop-shadow(0 0 8px rgba(248, 113, 113, .6)); }
+.db-fill.chg { animation: ring-glow 2s ease-in-out infinite; }
+.db-center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.db-center b { font-size: clamp(34px, 5vw, 46px); font-weight: 700; letter-spacing: -0.04em; line-height: 1; color: #fff; font-variant-numeric: tabular-nums; }
+.db-center small { font-size: 12px; color: rgba(204, 251, 241, .7); margin-top: 4px; }
+.db-bolt { margin-top: 6px; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: #A3E635; color: #1A2E05; animation: bolt-pulse 1.6s ease-out infinite; }
+.db-bolt svg { width: 15px; height: 15px; }
+.db-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.db-stats > div { display: flex; flex-direction: column; gap: 1px; padding: 10px 12px; border-radius: 12px; background: rgba(255, 255, 255, .05); border: 1px solid rgba(153, 246, 228, .14); }
+.db-stats span { font-size: 11.5px; color: rgba(204, 251, 241, .7); }
+.db-stats b { font-size: 18px; color: #fff; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+.d-battery.is-charging { box-shadow: 0 18px 44px rgba(6, 27, 26, .26), 0 0 0 1px rgba(163, 230, 53, .35); }
+.view.enter .db-fill { animation: sweep-ring 1.4s .25s cubic-bezier(.2,.7,.2,1) both; }
+.view.enter .db-center b { animation: pop .6s .5s cubic-bezier(.2,.7,.2,1) both; }
+/* the car rides along the trip bar */
+.progress.road { height: 10px; background: repeating-linear-gradient(90deg, var(--surface-3) 0 12px, transparent 12px 24px), var(--surface-2); animation: road 1.2s linear infinite; border: 1px solid var(--line); }
+.progress.road i { background: linear-gradient(90deg, var(--accent), var(--mint)); overflow: visible; }
+.car-dot { position: absolute; right: 0; top: 50%; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: var(--surface); color: var(--accent); border: 2px solid var(--accent); box-shadow: var(--shadow); transform: translate(50%, -50%); animation: bob 1.4s ease-in-out infinite; }
+.car-dot svg { width: 14px; height: 14px; }
+.route-line-ui { padding: 6px 4px; }
+/* charging: energy flows from the plug into the car */
+.chg-flow { display: grid; grid-template-columns: 34px minmax(0, 1fr) 34px; align-items: center; gap: 8px; }
+.cf-node { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; background: var(--mint-soft); color: var(--mint-ink); }
+.cf-node.car { background: var(--accent-soft); color: var(--accent); }
+.cf-node svg { width: 18px; height: 18px; }
+.cf-line { position: relative; height: 6px; border-radius: 99px; background: color-mix(in srgb, var(--mint) 25%, var(--surface-3)); overflow: hidden; }
+.cf-line i { position: absolute; top: -1px; width: 8px; height: 8px; border-radius: 50%; background: var(--charge); box-shadow: 0 0 8px var(--mint); animation: cf-move 1.6s linear infinite; }
+.cf-line i:nth-child(2) { animation-delay: .32s; } .cf-line i:nth-child(3) { animation-delay: .64s; } .cf-line i:nth-child(4) { animation-delay: .96s; } .cf-line i:nth-child(5) { animation-delay: 1.28s; }
+.btn.glow { animation: btn-glow 2.4s ease-in-out infinite; }
+
+/* ======================================================================
+   Operator: network live hero, station nodes, load meters, tile graphics
+   ====================================================================== */
+.op-hero { margin-bottom: 0; }
+.op-flow { margin: 2px 0 4px; max-height: 300px; }
+.st-node .fn-core { fill: #0B3B38; stroke: rgba(153, 246, 228, .35); stroke-width: 1; }
+.st-node .fn-halo { fill: rgba(94, 234, 212, .08); }
+.st-node.on .fn-halo { fill: rgba(94, 234, 212, .2); animation: halo-breathe 2.4s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+.sn-load { fill: none; stroke: #A3E635; stroke-width: 3; stroke-linecap: round; transition: stroke-dasharray .8s ease; }
+.sn-name { fill: #fff; font: 600 12.5px var(--font); }
+.sn-kw { fill: rgba(204, 251, 241, .7); font: 500 11px var(--font); font-variant-numeric: tabular-nums; }
+.op-util { display: flex; align-items: center; gap: 10px; padding: 6px 14px 6px 6px; border-radius: 99px; background: rgba(255, 255, 255, .06); border: 1px solid rgba(153, 246, 228, .16); }
+.op-util .ring-tile { width: 42px; height: 42px; } .op-util .rg-track { stroke: rgba(255, 255, 255, .1); }
+.op-util span { display: flex; flex-direction: column; line-height: 1.15; } .op-util b { color: #fff; font-size: 16px; } .op-util small { font-size: 11px; color: rgba(204, 251, 241, .7); }
+.view.enter .op-flow .st-node { animation: pop .5s cubic-bezier(.2,.7,.2,1) both; transform-box: fill-box; }
+.view.enter .op-flow .st-node:nth-of-type(2) { animation-delay: .08s; } .view.enter .op-flow .st-node:nth-of-type(3) { animation-delay: .16s; } .view.enter .op-flow .st-node:nth-of-type(4) { animation-delay: .24s; } .view.enter .op-flow .st-node:nth-of-type(5) { animation-delay: .32s; }
+.st-meter { height: 4px; margin: 0 20px 2px; border-radius: 99px; background: var(--surface-3); overflow: hidden; }
+.st-meter i { display: block; height: 100%; border-radius: 99px; background: linear-gradient(90deg, var(--accent), var(--mint)); transition: width .8s cubic-bezier(.2,.7,.2,1); }
+.st-meter.on i { background-image: linear-gradient(115deg, rgba(255,255,255,.35) 25%, transparent 25%, transparent 50%, rgba(255,255,255,.35) 50%, rgba(255,255,255,.35) 75%, transparent 75%), linear-gradient(90deg, var(--accent), var(--mint)); background-size: 20px 100%, 100% 100%; animation: stripes 1s linear infinite; }
+.conn-row.is-charging { position: relative; background: linear-gradient(90deg, color-mix(in srgb, var(--mint) 10%, transparent), transparent 55%); }
+.conn-row.is-charging::before { content: ""; position: absolute; left: 0; top: 10px; bottom: 10px; width: 3px; border-radius: 0 3px 3px 0; background: var(--charge); animation: dot-pulse 1.8s ease-out infinite; color: var(--mint); }
+.dots-tile.wide { grid-template-columns: repeat(7, 9px); }
+.dots-tile i.chg { background: var(--mint); border-color: transparent; box-shadow: 0 0 6px color-mix(in srgb, var(--mint) 60%, transparent); animation: dot-pulse 1.8s ease-out infinite; color: var(--mint); }
+.dots-tile i.bad { background: var(--bad); border-color: transparent; } .dots-tile i.res { background: var(--accent); border-color: transparent; }
+.bars-tile { display: flex; align-items: flex-end; gap: 5px; height: 38px; width: 70px; }
+.bars-tile i { position: relative; flex: 1; border-radius: 4px 4px 2px 2px; background: linear-gradient(180deg, var(--accent), color-mix(in srgb, var(--accent) 45%, transparent)); transition: height .6s cubic-bezier(.2,.7,.2,1); }
+.bars-tile i span { position: absolute; top: -15px; left: 0; right: 0; text-align: center; font-size: 10px; color: var(--muted); }
+.view.enter .bars-tile i { transform-origin: bottom; animation: grow .6s cubic-bezier(.2,.7,.2,1) both; }
+.view.enter .bars-tile i:nth-child(2) { animation-delay: .06s; } .view.enter .bars-tile i:nth-child(3) { animation-delay: .12s; } .view.enter .bars-tile i:nth-child(4) { animation-delay: .18s; }
+.kpi-grid.op-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@media (max-width: 860px) { .kpi-grid.op-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 720px) { .sn-name { font-size: 15px; } .sn-kw { font-size: 13px; } }
+
 :root[data-motion="reduced"] *, :root[data-motion="reduced"] *::before, :root[data-motion="reduced"] *::after { animation: none !important; transition: none !important; }
 :root[data-motion="reduced"] .wa-slide.on, :root[data-motion="reduced"] .wa-slide:first-child { opacity: 1; }
 

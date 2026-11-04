@@ -75,11 +75,6 @@
     if (done && active) done.setAttribute('points', donePts(v.trip).map(([la, lo]) => VF.proj(la, lo).map((n) => n.toFixed(1)).join(',')).join(' '));
   }
 
-  function gauge(soc) {
-    const r = 52, c = 2 * Math.PI * r, arc = c * 240 / 360;
-    return `<svg class="gauge" viewBox="0 0 140 124" aria-hidden="true"><circle class="g-track" cx="70" cy="70" r="${r}" stroke-dasharray="${arc.toFixed(1)} ${c.toFixed(1)}" transform="rotate(150 70 70)"/>` +
-      `<circle class="g-fill ${socCls(soc)}" data-live="gauge" cx="70" cy="70" r="${r}" stroke-dasharray="${(arc * clamp(soc, 0, 100) / 100).toFixed(1)} ${c.toFixed(1)}" transform="rotate(150 70 70)"/></svg>`;
-  }
   const socCls = (soc) => (soc < 15 ? 'lo' : soc < 35 ? 'mid' : '');
   function statusLine(v) {
     const ch = v.chargingAt && VF.station(v.chargingAt.stationId);
@@ -88,7 +83,7 @@
 
   // ---------------------------------------------------------------- shared cards
   const card = (cls, title, action, body) => `<section class="card ${cls}">${title ? `<div class="card-head"><h3>${title}</h3>${action || ''}</div>` : ''}${body}</section>`;
-  const stat = (label, value, live) => `<div class="stat"><span class="stat-label">${label}</span><span class="stat-value"${live ? ` data-live="${live}"` : ''}>${value}</span></div>`;
+  const stat = (label, value, live) => `<div class="stat"><span class="stat-label">${label}</span><span class="stat-value"${live ? ` data-live="${live}" data-tween` : ''}>${value}</span></div>`;
   const mapsLink = (st) => `https://www.google.com/maps/search/?api=1&query=${VF.PLACES[st.node].lat},${VF.PLACES[st.node].lon}`;
 
   // The charging card changes with the driver's situation: booked, charging, needs a charge, or fine.
@@ -98,6 +93,7 @@
       const st = VF.station(b.stationId); const c = VF.connector(b.connectorId);
       return card(`${span} charge-card is-charging`, 'Charging now', VF.pill('charge', 'Live'), `
         <div class="charge-place"><strong>${esc(st.name)}</strong><span class="muted small">Connector ${esc(c.label)} · ${esc(c.type)} ${c.kw} kW</span></div>
+        <div class="chg-flow" aria-hidden="true"><span class="cf-node">${icon('plug')}</span><span class="cf-line"><i></i><i></i><i></i><i></i><i></i></span><span class="cf-node car">${icon('car')}</span></div>
         <div class="progress lg"><i class="charge" data-live="chgw" style="width:${clamp(v.soc, 0, 100)}%"></i><b style="left:${b.targetSoc}%" title="Target ${b.targetSoc}%"></b></div>
         <div class="stats-4">${stat('Power', '—', 'chgkw')}${stat('Added', '—', 'chgkwh')}${stat('Cost so far', '—', 'chgcost')}${stat(`To ${b.targetSoc}%`, '—', 'chgleft')}</div>
         <div class="card-actions"><button class="btn" data-act="d-stop">Stop charging</button><span class="faint small">Booking ${esc(b.code)}</span></div>`);
@@ -113,9 +109,9 @@
     }
     if (v.status === 'stranded') return card(`${span} charge-card is-low`, 'Battery empty', '', `<p class="muted">Call roadside assistance. They get your booking history, but not your location unless you share it.</p>`);
     if (t && t.arriveSoc < reserve) {
-      return card(`${span} charge-card is-low`, 'Charge needed', VF.pill('bad', 'Action'), `
+      return card(`${span} charge-card is-low beam`, 'Charge needed', VF.pill('bad', 'Action'), `
         <p>At this pace you'd reach <strong>${esc(t.dest)}</strong> with <strong data-live="arrsoc2">${Math.round(t.arriveSoc)}%</strong>, below your ${reserve}% reserve.</p>
-        <button class="btn primary big" data-act="d-auto">${icon('bolt')}Book a charger on my route</button>
+        <button class="btn primary big glow" data-act="d-auto">${icon('bolt')}Book a charger on my route</button>
         <p class="faint small">Checks live availability of every connector that fits your car and holds a slot for your arrival.</p>`);
     }
     return card(`${span} charge-card is-ok`, 'Charging', VF.pill('ok', 'On track'), `
@@ -143,16 +139,27 @@
   function disconnected(d, v, m) {
     return `<div class="dash">${card('span-12', '', '', `<div class="empty-state">${icon('lock')}<h3>Vehicle data is switched off</h3><p class="muted">You turned off the connection to your ${esc(m.oem)}. Range, trip and charging features need battery data.</p><button class="btn primary" data-act="d-consent" data-k="telematics" data-v="1">Reconnect my ${esc(v.model)}</button></div>`)}</div>`;
   }
+  // Live battery hero: glowing 270° charge ring, numbers that glide, and a charging pulse.
+  const ringTone = (soc, v) => (v.status === 'charging' ? 'chg' : soc < 15 ? 'lo' : soc < 30 ? 'mid' : 'ok');
   function batteryCard(v, m, span) {
-    return card(`${span} battery-card`, 'Battery', `<span class="live-tag"><i></i>Live from ${esc(m.oem)}</span>`, `
-      <div class="battery-main"><div class="gauge-wrap">${gauge(v.soc)}<div class="gauge-center"><span class="gauge-value" data-live="soc">${Math.round(v.soc)}%</span><span class="muted small">charged</span></div></div>
-        <div class="battery-stats">${stat('Range', fmt.km(VF.rangeKm(v)), 'range')}${stat('Driving time left', fmt.dur(driveMinutesLeft(v)), 'tte')}</div></div>
-      <div class="card-foot">${esc(statusLine(v))}</div>`);
+    const charging = v.status === 'charging';
+    return `<section class="${span} d-battery beam${charging ? ' is-charging' : ''}">
+      <div class="hl-grid" aria-hidden="true"></div>
+      <div class="db-head"><span class="hl-live"><i></i>Live · ${esc(m.oem)}</span><span class="db-status">${esc(statusLine(v))}</span></div>
+      <div class="db-ring">
+        <svg viewBox="0 0 200 200" aria-hidden="true"><defs><linearGradient id="db-g" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#2DD4BF"/><stop offset="1" stop-color="#A3E635"/></linearGradient></defs>
+          <circle class="db-orbit" cx="100" cy="100" r="92"/>
+          <circle class="db-track" cx="100" cy="100" r="78" pathLength="100" stroke-dasharray="75 100" transform="rotate(135 100 100)"/>
+          <circle class="db-fill ${ringTone(v.soc, v)}" data-live="gauge" cx="100" cy="100" r="78" pathLength="100" stroke-dasharray="${(75 * clamp(v.soc, 0, 100) / 100).toFixed(2)} 100" transform="rotate(135 100 100)"/></svg>
+        <div class="db-center"><b data-live="soc" data-tween>${Math.round(v.soc)}%</b><small>${charging ? 'charging' : 'charged'}</small>${charging ? `<span class="db-bolt">${icon('bolt')}</span>` : ''}</div>
+      </div>
+      <div class="db-stats"><div><span>Range</span><b data-live="range" data-tween>${fmt.km(VF.rangeKm(v))}</b></div><div><span>Driving time left</span><b data-live="tte">${fmt.dur(driveMinutesLeft(v))}</b></div></div>
+    </section>`;
   }
   function tripCard(v, m, t, span) {
     if (!t) return whereTo(v, span);
     return card(`${span} trip-card`, 'Current trip', `<button class="link-btn" data-act="d-go" data-tab="driver-charge">Chargers on route</button>`, `
-      <div class="route-line-ui"><div class="end"><i class="dot"></i><strong>${esc(t.origin)}</strong></div><div class="progress"><i data-live="tripw" style="width:${(t.progress * 100).toFixed(1)}%"></i></div><div class="end r"><i class="dot dest"></i><strong>${esc(t.dest)}</strong></div></div>
+      <div class="route-line-ui"><div class="end"><i class="dot"></i><strong>${esc(t.origin)}</strong></div><div class="progress road"><i data-live="tripw" style="width:${(t.progress * 100).toFixed(1)}%"><span class="car-dot">${icon('car')}</span></i></div><div class="end r"><i class="dot dest"></i><strong>${esc(t.dest)}</strong></div></div>
       <div class="stats-3">${stat('Distance left', fmt.km(t.left), 'left')}${stat('Arrival', VF.fmtTime(t.eta), 'eta')}${stat('Battery on arrival', Math.round(t.arriveSoc) + '%', 'arrsoc')}</div>
       <div class="card-foot">${t.b ? `Includes your charging stop at ${esc(VF.station(t.b.stationId).name)}` : 'No charging stop planned'} · arrival updates live</div>`);
   }
@@ -183,7 +190,7 @@
     const t = tripInfo(v, m);
     const { list } = routeOptions(d);
     const canBook = !['charging', 'waiting', 'stranded'].includes(v.status);
-    return `<div class="dash">
+    return `<div class="aurora" aria-hidden="true"><i></i><i></i><i></i></div><div class="dash">
       ${batteryCard(v, m, 'span-4')}
       ${tripCard(v, m, t, 'span-4')}
       ${chargeCard(v, m, t, 'span-4')}
@@ -280,7 +287,7 @@
     const vals = {
       soc: Math.round(v.soc) + '%', range: fmt.km(VF.rangeKm(v)), tte: fmt.dur(driveMinutesLeft(v)), temp: fmt.n(v.tempC, 1) + ' °C', odo: fmt.n(v.odo) + ' km',
       sync: v.status === 'stranded' ? 'stale' : 'just now',
-      gauge: { attr: { 'stroke-dasharray': `${(2 * Math.PI * 52 * 240 / 360 * clamp(v.soc, 0, 100) / 100).toFixed(1)} ${(2 * Math.PI * 52).toFixed(1)}` }, cls: 'g-fill ' + socCls(v.soc) },
+      gauge: { attr: { 'stroke-dasharray': `${(75 * clamp(v.soc, 0, 100) / 100).toFixed(2)} 100` }, cls: 'db-fill ' + ringTone(v.soc, v) },
     };
     if (t) Object.assign(vals, { tripw: { w: t.progress * 100 }, left: fmt.km(t.left), eta: VF.fmtTime(t.eta), arrsoc: Math.round(t.arriveSoc) + '%', arrsoc2: Math.round(t.arriveSoc) + '%' });
     if (b) {

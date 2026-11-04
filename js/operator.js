@@ -49,29 +49,108 @@
     else if (nb && nb.start - VF.now() < 60 * MIN) detail = `<div class="small"><span class="pill accent plain">Booked</span> <span class="mono">${esc(nb.code)}</span> · ${esc(nb.model)} · slot ${VF.fmtTime(nb.start)}, held from ${VF.fmtTime(nb.start - 15 * MIN)}</div>`;
     else if (nb) detail = `<div class="small muted">Next booking ${VF.fmtTime(nb.start)} · ${esc(nb.model)}</div>`;
     else detail = `<div class="small faint">${c.status === 'Finishing' ? 'Vehicle unplugging' : 'No booking in the next hours'}</div>`;
-    return `<div class="conn-row"><div class="conn-id"><strong>${esc(c.label)}</strong><span class="faint small">${esc(c.type)} · ${c.kw} kW</span></div><div class="conn-status">${VF.connPill(c)}</div><div class="conn-detail">${detail}</div><div class="conn-act">${actions(c)}</div></div>`;
+    return `<div class="conn-row${se && c.status === 'Charging' ? ' is-charging' : ''}"><div class="conn-id"><strong>${esc(c.label)}</strong><span class="faint small">${esc(c.type)} · ${c.kw} kW</span></div><div class="conn-status">${VF.connPill(c)}</div><div class="conn-detail">${detail}</div><div class="conn-act">${actions(c)}</div></div>`;
   }
   function stationCard(st) {
     const load = stationLoad(st);
     const samples = (VF.loadSamples[st.id] || []).map((x) => x.kw);
     return `<section class="panel st-card">
       <div class="st-head"><div><button class="link-btn" data-act="op-open" data-id="${st.id}"><h3>${esc(st.name)}</h3></button><div class="faint small">${esc(VF.PLACES[st.node].name)} · ${st.lb === 'priority' ? 'Bookings first' : 'Equal share'} load balancing</div></div>
-        <div class="st-load"><span class="num"><strong data-live="${st.id}-load">${fmt.n(load)}</strong> / ${st.capKw} kW</span><span data-live="${st.id}-spark" class="spark-wrap">${VF.sparkline(samples, 120, 30, st.capKw)}</span></div></div>
+        <div class="st-load"><span class="num"><strong data-live="${st.id}-load" data-tween>${fmt.n(load)}</strong> / ${st.capKw} kW</span><span data-live="${st.id}-spark" class="spark-wrap">${VF.sparkline(samples, 120, 30, st.capKw)}</span></div></div>
+      <div class="st-meter${load > 0 ? ' on' : ''}" title="Load ${fmt.n(load)} of ${st.capKw} kW"><i data-live="${st.id}-meter" style="width:${Math.min(100, load / st.capKw * 100).toFixed(1)}%"></i></div>
       <div class="conn-list">${st.connectors.map(connRow).join('')}</div>
     </section>`;
   }
-  function kpis() {
+  // ---------------------------------------------------------------- live tiles (numbers glide, graphics update in place)
+  function kpiData() {
     const sts = myStations(); const conns = sts.flatMap((s) => s.connectors);
-    const t = VF.todayStats(mine);
-    const n = (s) => conns.filter((c) => c.status === s).length;
+    const t = VF.todayStats(mine); const n = (st) => conns.filter((c) => c.status === st).length;
+    const load = sum(sts, stationLoad); const cap = sum(sts, (st) => st.capKw);
+    const books = VF.state.bookings.filter((b) => mine(b.stationId) && b.status === 'confirmed');
+    const now = VF.now(); const perHour = [0, 1, 2, 3].map((h) => books.filter((b) => b.start >= now + h * HOUR && b.start < now + (h + 1) * HOUR).length);
+    // Today hour by hour, from completed sessions: energy per hour and revenue building up.
+    const day0 = VF.startOfDay(now); const hrs = Math.max(2, Math.floor((now - day0) / HOUR) + 1);
+    const done = VF.state.sessions.filter((x) => mine(x.stationId) && x.end >= day0);
+    const series = Array.from({ length: hrs }, (_, h) => sum(done.filter((x) => x.end >= day0 + h * HOUR && x.end < day0 + (h + 1) * HOUR), (x) => x.kwh));
+    let acc = 0; const cum = Array.from({ length: hrs }, (_, h) => (acc += sum(done.filter((x) => x.end >= day0 + h * HOUR && x.end < day0 + (h + 1) * HOUR), (x) => x.cost)));
+    const bad = n('Faulted') + n('Unavailable');
     return [
-      VF.kpi('Available', n('Available'), `/ ${conns.length}`, 'connectors'),
-      VF.kpi('Charging now', n('Charging'), '', `${fmt.n(sum(sts, stationLoad))} kW total`),
-      VF.kpi('Upcoming bookings', VF.state.bookings.filter((b) => mine(b.stationId) && b.status === 'confirmed').length, '', `${n('Reserved')} connector${n('Reserved') === 1 ? '' : 's'} held now`),
-      VF.kpi('Faulted', n('Faulted') + n('Unavailable'), '', n('Faulted') ? 'needs attention' : 'all healthy', n('Faulted') ? 'bad' : 'good'),
-      VF.kpi('Energy today', fmt.n(t.kwh), 'kWh', `${t.sessions} sessions`),
-      VF.kpi('Revenue today', fmt.money(t.revenue, 0), '', 'incl. live sessions'),
-    ].join('');
+      { icon: 'plug', label: 'Available', value: String(n('Available')), unit: `/ ${conns.length}`, hint: 'connectors free now', viz: { dots: conns.map((c) => (c.status === 'Available' ? 'on' : c.status === 'Charging' ? 'chg' : c.status === 'Faulted' || c.status === 'Unavailable' ? 'bad' : c.status === 'Reserved' ? 'res' : '')) } },
+      { icon: 'bolt', label: 'Charging now', value: String(n('Charging')), hint: `${fmt.n(load)} kW of ${fmt.n(cap)} kW`, viz: { ring: conns.length ? n('Charging') / conns.length * 100 : 0, tone: 'mint' } },
+      { icon: 'calendar', label: 'Upcoming bookings', value: String(books.length), hint: `${n('Reserved')} connector${n('Reserved') === 1 ? '' : 's'} held now`, viz: { bars: perHour } },
+      { icon: 'warn', label: 'Faulted', value: String(bad), hint: n('Faulted') ? 'needs attention' : 'all healthy', tone: n('Faulted') ? 'bad' : 'ok', viz: { ring: conns.length ? (conns.length - bad) / conns.length * 100 : 100, tone: bad ? 'warn' : 'teal' } },
+      { icon: 'zap', label: 'Energy today', value: fmt.n(t.kwh), unit: 'kWh', hint: `${t.sessions} sessions · per hour`, viz: { spark: series, tone: 'mint' } },
+      { icon: 'chart', label: 'Revenue today', value: fmt.money(t.revenue, 0), hint: 'incl. live sessions · building up', viz: { spark: cum, tone: 'teal' } },
+    ];
+  }
+  const dotsHTML = (d) => d.map((c) => `<i class="${c}"></i>`).join('');
+  const barsHTML = (b) => { const mx = Math.max(1, ...b); return b.map((x, i) => `<i style="height:${(12 + x / mx * 88).toFixed(0)}%" title="${x} in hour ${i + 1}"><span>${x}</span></i>`).join(''); };
+  function vizHTML(z, i) {
+    if (z.spark) return VF.c.spark(z.spark, z.tone);
+    if (z.ring != null) return VF.c.ring(z.ring, z.tone, `okpi-${i}-ring`);
+    if (z.dots) return `<div class="dots-tile wide" data-live="okpi-${i}-dots">${dotsHTML(z.dots)}</div>`;
+    if (z.bars) return `<div class="bars-tile" data-live="okpi-${i}-bars">${barsHTML(z.bars)}</div>`;
+    return '';
+  }
+  function kpis() {
+    return kpiData().map((k, i) => `<div class="stat-card kpi ${k.tone === 'bad' ? 'warn' : ''}">
+      <div class="stat-top"><span class="stat-ic">${icon(k.icon)}</span><span class="stat-name">${esc(k.label)}</span></div>
+      <div class="kpi-mid"><div class="stat-num"><span data-live="okpi-${i}" data-tween>${k.value}</span>${k.unit ? `<small>${esc(k.unit)}</small>` : ''}</div><div class="kpi-viz">${vizHTML(k.viz, i)}</div></div>
+      <div class="stat-foot"><span class="stat-hint ${k.tone === 'bad' ? 'text-bad' : k.tone === 'ok' ? 'text-ok' : ''}" data-live="okpi-${i}-h">${esc(k.hint)}</span></div></div>`).join('');
+  }
+  function kpiLive(v) {
+    kpiData().forEach((k, i) => {
+      v[`okpi-${i}`] = k.value; v[`okpi-${i}-h`] = k.hint; const z = k.viz;
+      if (z.ring != null) v[`okpi-${i}-ring`] = { attr: { 'stroke-dasharray': `${Math.max(0, Math.min(100, z.ring)).toFixed(1)} 100` } };
+      if (z.dots) v[`okpi-${i}-dots`] = { html: dotsHTML(z.dots) };
+      if (z.bars) v[`okpi-${i}-bars`] = { html: barsHTML(z.bars) };
+    });
+  }
+  // Network live hero: energy flowing from the grid to each station, with live load per station.
+  function heroNumbers() {
+    const sts = myStations(); const t = VF.todayStats(mine);
+    return { sts, load: sum(sts, stationLoad), cap: sum(sts, (st) => st.capKw), charging: sum(sts, (st) => st.connectors.filter((c) => c.status === 'Charging').length), kwh: t.kwh, revenue: t.revenue };
+  }
+  function heroLive() {
+    const n = heroNumbers(); const still = VF.motion && VF.motion.reduced();
+    const H = 40 + n.sts.length * 44, gx = 90, gy = H / 2, sx = 700;
+    const paths = n.sts.map((st, i) => {
+      const y = 30 + i * 44; const id = `on-p${i}`; const ch = st.connectors.filter((c) => c.status === 'Charging').length;
+      const parts = still || !ch ? '' : Array.from({ length: Math.min(5, ch + 1) }, (_, k) => { const dur = 2.6 - Math.min(1.4, stationLoad(st) / Math.max(1, st.capKw) * 1.4); return `<circle class="fp" r="2.8"><animateMotion dur="${dur.toFixed(2)}s" begin="${(-k * dur / (ch + 1)).toFixed(2)}s" repeatCount="indefinite"><mpath href="#${id}"/></animateMotion></circle>`; }).join('');
+      const pct = Math.min(100, stationLoad(st) / Math.max(1, st.capKw) * 100);
+      return `<path id="${id}" class="fl-path ${ch ? '' : 'idle'}" d="M${gx + 26},${gy} C${gx + 260},${gy} ${sx - 260},${y} ${sx - 14},${y}"/>${parts}
+        <g class="st-node${ch ? ' on' : ''}" transform="translate(${sx},${y})"><circle class="fn-halo" r="16"/><circle class="fn-core" r="11"/><circle class="sn-load" r="11" pathLength="100" stroke-dasharray="${pct.toFixed(1)} 100" data-live="${st.id}-ring" transform="rotate(-90)"/>
+          <text x="22" y="-2" class="sn-name">${esc(st.name.length > 26 ? st.name.slice(0, 25) + '…' : st.name)}</text><text x="22" y="12" class="sn-kw"><tspan data-live="${st.id}-hkw">${fmt.n(stationLoad(st))}</tspan> kW · ${ch}/${st.connectors.length} charging</text></g>`;
+    }).join('');
+    return `<section class="hero-live op-hero beam">
+      <div class="hl-grid" aria-hidden="true"></div>
+      <div class="hl-head"><div><span class="hl-live"><i></i>Live · ${esc(op().name)}</span><h2>Network live</h2><p>Every connector, every kilowatt, right now.</p></div>
+        <div class="op-util">${VF.c.ring(n.cap ? n.load / n.cap * 100 : 0, 'mint', 'op-util-ring', 'Network load')}<span><b data-live="op-util" data-tween>${Math.round(n.cap ? n.load / n.cap * 100 : 0)}%</b><small>of grid capacity</small></span></div></div>
+      <svg class="flow op-flow" viewBox="0 0 1000 ${H}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Energy flowing from the grid to each station">
+        <defs><linearGradient id="fl-g" x1="0" x2="1"><stop offset="0" stop-color="#5EEAD4" stop-opacity=".15"/><stop offset=".5" stop-color="#5EEAD4" stop-opacity=".7"/><stop offset="1" stop-color="#A3E635" stop-opacity=".3"/></linearGradient></defs>
+        ${paths}
+        <g class="fn grid" transform="translate(${gx},${gy})"><circle class="fn-halo" r="34"/><circle class="fn-core" r="26"/><g transform="translate(-11,-11)" class="fn-ic">${icon('bolt').replace('<svg ', '<svg width="22" height="22" ')}</g></g>
+      </svg>
+      <div class="hl-stats">
+        <div><span>Load now</span><b><span data-live="op-hload" data-tween>${fmt.n(n.load)}</span> kW</b><small><span data-live="op-hchg">${n.charging}</span> connectors charging</small></div>
+        <div><span>Energy today</span><b><span data-live="op-hkwh" data-tween>${fmt.n(n.kwh)}</span> kWh</b><small>across ${n.sts.length} stations</small></div>
+        <div><span>Revenue today</span><b data-live="op-hrev" data-tween>${fmt.money(n.revenue, 0)}</b><small>incl. live sessions</small></div>
+      </div>
+    </section>`;
+  }
+  function heroValues(v) {
+    const n = heroNumbers();
+    Object.assign(v, { 'op-hload': fmt.n(n.load), 'op-hchg': String(n.charging), 'op-hkwh': fmt.n(n.kwh), 'op-hrev': fmt.money(n.revenue, 0), 'op-util': Math.round(n.cap ? n.load / n.cap * 100 : 0) + '%', 'op-util-ring': { attr: { 'stroke-dasharray': `${(n.cap ? n.load / n.cap * 100 : 0).toFixed(1)} 100` } } });
+    for (const st of n.sts) { const l = stationLoad(st); v[`${st.id}-hkw`] = fmt.n(l); v[`${st.id}-ring`] = { attr: { 'stroke-dasharray': `${Math.min(100, l / Math.max(1, st.capKw) * 100).toFixed(1)} 100` } }; v[`${st.id}-meter`] = { w: Math.min(100, l / Math.max(1, st.capKw) * 100) }; }
+  }
+  function tickerHTML() {
+    const items = [];
+    for (const b of upcoming(3).slice(0, 5)) items.push(['teal', 'calendar', `${b.code} · ${b.model} arriving ${bookingEta(b)} · ${VF.station(b.stationId).name.split(' ').slice(0, 2).join(' ')}`]);
+    for (const st of myStations()) for (const c of st.connectors) if (c.session && c.status === 'Charging') items.push(['mint', 'bolt', `${st.name.split(' ').slice(0, 2).join(' ')} ${c.label} · ${c.session.model} · ${fmt.kw(c.session.kw)}`]);
+    for (const a of VF.state.alerts.filter((x) => x.scope === opId() && !x.resolved).slice(0, 3)) items.push([a.sev === 'critical' ? 'bad' : 'warn', 'warn', a.title]);
+    if (!items.length) return '';
+    const row = items.slice(0, 14).map(([t, ic, txt]) => `<span class="tk ${t}">${icon(ic)}${esc(txt)}</span>`).join('');
+    return `<div class="ticker" aria-label="Live activity"><span class="tk-label"><i></i>Live</span><div class="tk-viewport"><div class="tk-track" style="--dur:${Math.max(30, items.length * 6)}s">${row}<span class="tk-gap"></span>${row}</div></div></div>`;
   }
   function ocppList(filter, n) {
     const rows = VF.state.ocpp.filter((x) => mine(x.stationId) && (!filter || filter === 'all' || x.stationId === filter)).slice(0, n || 14);
@@ -84,10 +163,12 @@
       <div class="right"><div class="num strong">${VF.fmtTime(b.start)}</div><div class="small muted">ETA <span data-live="bk-${b.id}">${bookingEta(b)}</span> · ${bookingSoc(b)}</div></div></li>`;
   }
 
-  // ---------------------------------------------------------------- pages
   function pageLive() {
     const up = upcoming(4);
-    return `<section class="kpis" data-live="op-kpis">${kpis()}</section>
+    return `<div class="aurora" aria-hidden="true"><i></i><i></i><i></i></div>
+      ${heroLive()}
+      ${tickerHTML()}
+      <section class="stat-grid kpi-grid op-kpis">${kpis()}</section>
       <div class="grid g-main">
         <div class="st-grid">${myStations().map(stationCard).join('')}</div>
         <div class="stack">
@@ -242,12 +323,12 @@
     const v = {};
     const sts = page === 'op-stations' ? [VF.station(ui.station)].filter(Boolean) : myStations();
     for (const st of sts) {
-      v[st.id + '-load'] = fmt.n(stationLoad(st));
+      v[st.id + '-load'] = fmt.n(stationLoad(st)); v[st.id + '-meter'] = { w: Math.min(100, stationLoad(st) / Math.max(1, st.capKw) * 100) };
       const samples = (VF.loadSamples[st.id] || []).map((x) => x.kw);
       v[st.id + '-spark'] = { html: page === 'op-stations' ? VF.sparkline(samples, 320, 60, st.capKw) : VF.sparkline(samples, 120, 30, st.capKw) };
       for (const c of st.connectors) if (c.session) Object.assign(v, { [c.id + '-soc']: sessionSoc(c), [c.id + '-kw']: fmt.kw(c.session.kw), [c.id + '-kwh']: fmt.kwh(c.session.kwh), [c.id + '-el']: elapsed(c.session) });
     }
-    if (page === 'op-live') { v['op-kpis'] = { html: kpis() }; v['op-log'] = { html: ocppList('all') }; }
+    if (page === 'op-live') { kpiLive(v); heroValues(v); v['op-log'] = { html: ocppList('all') }; }
     if (page === 'op-alerts') v['op-log2'] = { html: ocppList(ui.logStation, 80) };
     for (const b of upcoming(4)) v['bk-' + b.id] = bookingEta(b);
     return v;
