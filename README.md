@@ -10,6 +10,20 @@ One platform that connects **EV fleets**, **drivers**, **their vehicles** (any m
 | **VoltFleet Connect** (developer portal) | Fintechs, insurers, ride-hailing, energy companies | One API for any EV make (battery, charging, start/stop charge, odometer, tyres, location, lock). Apps & keys (client ID/secret, rotate), test vehicles, an API explorer with real error codes, a VIN compatibility check, webhooks (`charge.started`, `charge.completed`, `battery.low`, `vehicle.connected/disconnected`) with signed deliveries, docs and per-vehicle pricing. Drivers grant access through the **Connect consent flow** (pick brand → sign in with the carmaker or pair a plug-in device → approve each permission) and can revoke it in the driver app. |
 | **Super admin console** | VoltFleet staff | Network-wide KPIs and map, operators, stations and bookings. Vehicle make integrations (BYD, Tesla, Rivian, Hyundai, Kia, Nissan, VW, Ford, MG, plus a universal OBD-II dongle) with data coverage and a plug compatibility matrix. Users with masked personal data. A privacy and compliance center. The demo clock. |
 
+## Intelligence (v2: the long-term vision)
+
+The EV Manager's **Intelligence** section turns fleet data into decisions. Each module is a real optimiser running in the browser (`js/intel.js`) on sample inputs; the pages are in `js/manager-intel.js`.
+
+| Module | What it does | Goes live when |
+| --- | --- | --- |
+| **Smart Charging 2.0** | A 24-hour depot charging plan. The **Smart Queue** orders vehicles by how tight their charging window is and when they leave; each vehicle's mission target comes from its next route (distance, cargo, heat and battery age). Energy is placed in the cheapest hours (time-of-use tariff + demand charge) or the lowest-carbon hours, never above the depot's grid supply limit, using rooftop solar and a depot battery. Compared with plug-and-charge: cost, peak demand (peak shaving), carbon and mission readiness. | Depot chargers take OCPP charging profiles (Real chargers) and a site meter reports load |
+| **Predictive Maintenance** | Seven components per vehicle (HV battery, cooling, 12 V battery, tyres, brakes, drive unit, charge port), each with a monitored signal and limit. A trend model with uncertainty estimates days to the limit and the chance of reaching it within 30 days. Book service on a low-demand day; completing a work order resets the component. | Telematics stream the signals (Smartcar, OBD-II) |
+| **AI Route Optimizer** | Assigns the day's jobs to vehicles (payload and battery limits, time windows), orders stops (2-opt) and picks the departure time. The energy model accounts for traffic by hour, weather (live Open-Meteo forecast for Accra), hills, cargo and battery ageing; toggle each to see its effect. Dispatch all routes in one step. | A job/order feed or TMS is connected |
+| **Vehicle-to-Grid** | Parked vehicles act as a virtual power plant: sell energy at the evening peak, recharge off-peak and still leave at their mission target. Net value after recharge cost and battery wear; per-vehicle enrolment; a simulated grid (demand-response) event. Bidirectional support is shown per model, with a "whole fleet" what-if. | ISO 15118-20 bidirectional chargers, V2G-capable vehicles and an export agreement |
+| **Impact & ROI** | Cost per km (energy, maintenance, operations) today vs with the modules, uptime, on-time deliveries, CO₂, an ESG report (CSV) and a scale calculator from 10 to 10,000 vehicles. | — |
+
+Weather requests send only Accra's fixed coordinates to Open-Meteo (free, no key); offline, a modelled forecast is used. Tariffs, depot assets (supply limit, chargers, solar, battery) and V2G prices are editable in the pages. All figures are estimates until real meters, chargers and vehicles are connected.
+
 ## Privacy by design
 
 - **Role-based access.** Each role reaches only its own app. Opening another role's page is refused and logged.
@@ -84,6 +98,7 @@ No build step. Upload this folder to any static host:
 - `docs/market-scan.md`: vehicle data APIs, XCharge and other charger and charging-software vendors
 - `js/map.js`: street maps (Leaflet tiles, live markers, road routing, schematic fallback); `js/vendor/` holds the BSD-licensed Leaflet
 - `js/manager.js`, `js/manager-more.js`: the EV Manager pages
+- `js/intel.js`: the v2 optimisers (smart charging, predictive maintenance, route optimisation, V2G, ROI); `js/manager-intel.js`: the Intelligence pages
 - `js/driver.js`, `js/operator.js`, `js/admin.js`: the driver, operator and admin apps
 - `js/connect.js`: VoltFleet Connect (developer portal, consent flow, simulated API and webhooks)
 - `js/cloud.js`, `js/config.js`: cross-device sync through Supabase (`js/vendor/` holds the MIT-licensed supabase-js client)

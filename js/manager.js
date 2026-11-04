@@ -219,6 +219,7 @@
       <div class="bento-top">${liveHero()}<section class="span-4 hero-photo beam">${welcomeArt()}</section></div>
       <div data-live="m-ticker">${tickerHTML()}</div>
       <section class="stat-grid kpi-grid">${kpis()}</section>
+      ${VF.mgr.intelStrip ? VF.mgr.intelStrip() : ''}
       <div class="dash">
         ${C.card({ cls: 'span-8 flush', title: 'Vehicle overview', sub: 'Live status of your fleet', action: `<a class="btn small ghost" href="#m-vehicles">View all ${icon('arrow-right')}</a>` }, `<div class="vlist">${list.map(vehicleRow).join('')}</div>`)}
         <div class="span-4 stack">
