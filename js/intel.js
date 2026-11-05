@@ -18,15 +18,16 @@
 
   // ================================================================ settings (kept with the fleet, synced)
   const DEPOT_DEFAULTS = {
-    dp1: { gridKw: 160, solarKwp: 120, bessKwh: 200, bessKw: 90, ac: 10, acKw: 22, dc: 2, dcKw: 60, baseDay: 42, baseNight: 16 },
-    dp2: { gridKw: 110, solarKwp: 60, bessKwh: 0, bessKw: 0, ac: 8, acKw: 22, dc: 1, dcKw: 60, baseDay: 26, baseNight: 9 },
+    dp1: { gensetKw: 0, gridKw: 160, solarKwp: 120, bessKwh: 200, bessKw: 90, ac: 10, acKw: 22, dc: 2, dcKw: 60, baseDay: 42, baseNight: 16 },
+    dp2: { gridKw: 110, solarKwp: 60, bessKwh: 0, bessKw: 0, ac: 8, acKw: 22, dc: 1, dcKw: 60, baseDay: 26, baseNight: 9, gensetKw: 60 },
   };
-  const OTHER_DEPOT = { gridKw: 100, solarKwp: 0, bessKwh: 0, bessKw: 0, ac: 6, acKw: 22, dc: 1, dcKw: 60, baseDay: 20, baseNight: 8 };
+  const OTHER_DEPOT = { gensetKw: 0, gridKw: 100, solarKwp: 0, bessKwh: 0, bessKw: 0, ac: 6, acKw: 22, dc: 1, dcKw: 60, baseDay: 20, baseNight: 8 };
   I.cfg = () => {
     const f = F(); if (!f) return null;
     const c = f.intel = f.intel || {};
     c.strategy = c.strategy || 'cost';
-    c.tariff = Object.assign({ off: 1.55, std: 2.05, peak: 2.85, demand: 95, feedIn: 0.6 }, c.tariff);
+    c.tariff = Object.assign({ mode: 'tou', off: 1.55, std: 2.05, peak: 2.85, demand: 95, feedIn: 0.6 }, c.tariff);
+    c.risk = Object.assign({ on: true, weight: 3 }, c.risk);
     c.depots = c.depots || {};
     for (const d of f.depots) c.depots[d.id] = Object.assign({}, DEPOT_DEFAULTS[d.id] || OTHER_DEPOT, c.depots[d.id]);
     c.v2g = Object.assign({ on: true, scenario: 'fleet', floor: 40, exportPrice: 3.4, wear: 0.32, maxKw: 11, optOut: [] }, c.v2g);
@@ -37,6 +38,14 @@
   // Time-of-use bands follow the network's tariff hours (off-peak 22–06, standard 06–17, peak 17–22).
   I.band = (h) => { const b = VF.operator('op1').pricing.bands; for (let i = 0; i < b.length; i++) { const a = +b[i].from, z = +b[i].to; if (a <= z ? h >= a && h < z : h >= a || h < z) return i; } return 1; };
   I.price = (h) => { const t = I.cfg().tariff; return [t.off, t.std, t.peak][I.band(h)]; };
+  // Hourly day-ahead prices (as in Nordic and EU markets): a daily shape around the standard tariff, different every day.
+  const SHAPE = [.62, .58, .56, .55, .57, .66, .86, 1.08, 1.12, 1.02, .94, .88, .84, .82, .85, .92, 1.04, 1.28, 1.42, 1.38, 1.2, .98, .8, .7];
+  I.priceAt = (ms) => {
+    const t = I.cfg().tariff; const h = VF.hourOf(ms); if (t.mode !== 'hourly') return I.price(h);
+    const day = Math.floor(VF.startOfDay(ms) / DAY); const r = mulberry32(seed('px' + day)); const lvl = 0.8 + r() * 0.4, sun = r() * 0.25;
+    const noise = (mulberry32(seed('px' + day + ':' + h))() - 0.5) * 0.12;
+    return Math.max(0.2, +(t.std * (SHAPE[h] * lvl - (h >= 11 && h < 15 ? sun : 0) + noise)).toFixed(2));
+  };
   // Grid carbon intensity by hour, kg CO2/kWh (assumed profile: gas peaking plants run in the evening peak).
   I.carbon = (h) => (I.band(h) === 2 ? 0.47 : I.band(h) === 0 ? 0.37 : 0.41);
   const RESERVE = 15;
@@ -142,7 +151,8 @@
   function planDepot(depotId, strategy, opts) {
     const cfg = I.cfg(); const dep = cfg.depots[depotId]; const t = cfg.tariff; const now = VF.now();
     const t0 = Math.floor(now / HOUR) * HOUR; const N = 25;
-    const slots = Array.from({ length: N }, (_, i) => { const ms = t0 + i * HOUR; const h = VF.hourOf(ms); return { i, ms, h, band: I.band(h), price: I.price(h), carbon: I.carbon(h), solar: solarKw(dep, ms + 30 * MIN), base: baseKw(dep, h), bess: 0, ev: 0, v2g: 0, evBase: 0, acUsed: 0, dcUsed: 0, acBase: 0, dcBase: 0 }; });
+    const slots = Array.from({ length: N }, (_, i) => { const ms = t0 + i * HOUR; const h = VF.hourOf(ms); return { i, ms, h, band: I.band(h), price: I.priceAt(ms), carbon: I.carbon(h), outP: VF.ops && cfg.risk.on ? VF.ops.outageP(depotId, ms + 30 * MIN) : 0, down: !!(VF.ops && VF.ops.isDown(depotId, ms + 30 * MIN)), solar: solarKw(dep, ms + 30 * MIN), base: baseKw(dep, h), bess: 0, ev: 0, v2g: 0, evBase: 0, acUsed: 0, dcUsed: 0, acBase: 0, dcBase: 0 }; });
+    for (const s of slots) if (s.down) s.price = 4.2; // diesel generator energy during an outage
     const vs = VF.simVehicles().filter((v) => v.depot === depotId && !['maintenance', 'offline'].includes(v.status));
     const items = vs.map((v) => {
       const d = I.departure(v); const inp = vehiclePlanInputs(v, d); const m = VF.MODELS[v.model];
@@ -158,7 +168,8 @@
       let e = dep.bessKwh * 0.35;
       for (const s of slots) { if (s.band !== 2 && s.h >= 9 && s.h < 17) { const sur = Math.max(0, s.solar - s.base); const c = Math.min(sur, dep.bessKw, dep.bessKwh * 0.95 - e); if (c > 0) { s.bessIn = c; e += c * 0.92; } } }
       if (VF.hourOf(now) >= 17 || VF.hourOf(now) < 9) e = dep.bessKwh * 0.75; // already charged earlier today
-      for (const s of slots.slice().filter((x) => x.band === 2).sort((a, b) => a.i - b.i)) { const d = Math.min(dep.bessKw, e); s.bess = d; e -= d; }
+      for (const s of slots.filter((x) => x.down)) { const d = Math.min(dep.bessKw, e); s.bess = d; e -= d; } // outage: battery first
+      for (const s of slots.slice().filter((x) => x.band === 2 && !x.down).sort((a, b) => a.i - b.i)) { const d = Math.min(dep.bessKw, e); s.bess = d; e -= d; }
     }
     const net = (s) => s.base + s.ev + (s.bessIn || 0) - s.solar - s.bess - s.v2g;
     // Smart Queue: tightest windows first, then earliest departure.
@@ -189,12 +200,13 @@
             const room = P * it.pres[s.i] - it.kw[s.i]; if (room <= 0.05 || it.exp[s.i] > 0) continue;
             const busy = it.kw[s.i] > 0; if (!busy && (mode === 'AC' ? s.acUsed >= dep.ac : s.dcUsed >= dep.dc)) continue;
             const chunk = Math.min(2, room, need); const n0 = net(s); const n1 = n0 + chunk;
-            if (n1 > dep.gridKw + 1e-6) continue;
+            if (n1 > (s.down ? (dep.gensetKw || 0) : dep.gridKw) + 1e-6) continue;
             const green = Math.max(0, Math.min(chunk, -n0)); const grid = chunk - green;
             let cost;
             if (strategy === 'ready') cost = s.i * 10 + (n1 > pk ? 0.01 : 0);
             else if (strategy === 'green') cost = (grid * s.carbon * 10 + green * 0.2) / chunk + s.price * 0.05;
-            else cost = (green * t.feedIn + grid * s.price + Math.max(0, n1 - pk) * t.demand / 30) / chunk;
+            else cost = (green * t.feedIn + grid * (s.down ? 4.2 : s.price) + Math.max(0, n1 - pk) * t.demand / 30) / chunk;
+            if (strategy !== 'ready') cost += s.outP * cfg.risk.weight; // avoid hours when the grid often fails
             cost += s.i * 1e-4; // ties: earlier
             if (cost < bestCost) { bestCost = cost; best = { s, chunk }; }
           }
@@ -208,6 +220,7 @@
       it.short = Math.max(0, need) * 0.92;
       it.endSoc = Math.min(100, it.arrSoc + (sum(it.kw, (x) => x) * 0.92 - (it.exported || 0)) / it.usable * 100);
       it.ready = it.endSoc >= it.target - 0.5;
+      const atRisk = sum(it.kw.map((kw, i) => kw * slots[i].outP), (x) => x) * 0.92; it.riskSoc = it.endSoc - atRisk / it.usable * 100; it.outageProof = it.riskSoc >= it.target - 2;
       const on = it.kw.map((x, i) => x > 0.05 ? i : -1).filter((i) => i >= 0);
       it.start = on.length ? slots[on[0]].ms : null; it.end = on.length ? slots[on[on.length - 1]].ms + HOUR : null;
     }
@@ -244,7 +257,7 @@
       const evKwh = tot('evKwh');
       return { strategy, depots, items, cost: tot('cost'), costBase: tot('costBase'), peak: tot('peak'), peakBase: tot('peakBase'), co2: tot('co2'), co2Base: tot('co2Base'), green: tot('green'), evKwh, exportKwh: tot('exportKwh'),
         savings: tot('costBase') - tot('cost'), savingsPct: tot('costBase') > 0 ? (1 - tot('cost') / tot('costBase')) * 100 : 0, greenPct: evKwh ? tot('green') / evKwh * 100 : 0,
-        ready: items.filter((x) => x.ready).length, total: items.length, slots0: depots[0] ? depots[0].slots.map((s) => s.ms) : [] };
+        ready: items.filter((x) => x.ready).length, proof: items.filter((x) => x.outageProof).length, total: items.length, slots0: depots[0] ? depots[0].slots.map((s) => s.ms) : [] };
     });
   };
 

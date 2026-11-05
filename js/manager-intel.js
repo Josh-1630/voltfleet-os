@@ -65,16 +65,17 @@
     const applied = ap && VF.now() - ap.at < 14 * HOUR;
     return `<div class="aurora" aria-hidden="true"><i></i><i></i><i></i></div>
       <div class="toolbar">${C.seg([['cost', 'Lowest cost', 'coins'], ['green', 'Greenest', 'leaf'], ['ready', 'Fastest ready', 'timer']], cfg.strategy, 'i-strategy')}${C.seg(depSeg, ui.iDepot, 'i-depot')}
-        <span class="chip">${icon(I.wx.src === 'open-meteo' ? 'cloud-sun' : 'cloud')}${esc(I.weatherSource())}</span></div>
+        ${C.seg([['tou', 'ECG time-of-use'], ['hourly', 'Hourly day-ahead']], cfg.tariff.mode, 'i-tmode')}<span class="chip">${icon(I.wx.src === 'open-meteo' ? 'cloud-sun' : 'cloud')}${esc(I.weatherSource())}</span></div>
+      ${VF.ops ? F().depots.filter((d) => !VF.ops.cfg().grid[d.id].up).map((d) => C.banner('bad', 'zap', `<strong>Grid outage at ${esc(d.name)}</strong> until about ${t(VF.ops.cfg().grid[d.id].until)}. The plan runs on the depot battery${I.cfg().depots[d.id].gensetKw ? ' and generator' : ''} for vehicles leaving first.`)).join('') : ''}
       ${applied ? C.banner('ok', 'circle-check', `<strong>Plan running since ${t(ap.at)}.</strong> ${ap.ready}/${ap.total} vehicles on track for departure. Charging power is set per vehicle through OCPP charging profiles (simulated until depot chargers are connected in Real chargers).`) : ''}
       <section class="stat-grid kpi-grid">
         ${C.stat({ icon: 'coins', label: 'Charging cost, next 24 h', value: money(s.cost, 0), hint: `${money(s.base, 0)} with plug-and-charge`, trend: delta(s.cost, s.base, true) })}
         ${C.stat({ icon: 'trending-down', label: 'Saved by the plan', value: pct(Math.max(0, s.savingsPct)), hint: `${money(Math.max(0, s.savings), 0)} tonight · about ${money(Math.max(0, s.savings) * 30, 0)} a month`, tone: 'lime' })}
         ${C.stat({ icon: 'gauge', label: 'Peak grid demand', value: fmt.n(s.peak), unit: 'kW', hint: `limit ${fmt.kw(s.limit)} · unplanned ${fmt.kw(s.peakBase)}`, trend: delta(s.peak, s.peakBase, true) })}
-        ${C.stat({ icon: 'target', label: 'Mission readiness', value: `${s.ready}/${s.items.length}`, hint: s.ready === s.items.length ? 'every vehicle leaves on target' : `${s.items.length - s.ready} short of target`, tone: s.ready === s.items.length ? '' : 'warn' })}
+        ${C.stat({ icon: 'target', label: 'Mission readiness', value: `${s.ready}/${s.items.length}`, hint: `${s.items.filter((x) => x.outageProof).length}/${s.items.length} still ready if the grid fails at its usual times`, tone: s.ready === s.items.length ? '' : 'warn' })}
       </section>
       <div class="dash">
-        ${C.card({ cls: 'span-12', title: 'Depot load plan', sub: 'Next 24 hours, hourly. Bars: what the depot draws; dashed line: plug-and-charge without a plan', action: C.legend([['EV from grid', 'teal'], ['EV from solar & battery', 'lime'], ['Building load', 'muted'], ['Sold to grid (V2G)', 'warn']]) }, '<div class="chart-slot" data-chart="i-load"></div><div class="band-key"><span class="b0">Off-peak ' + money(cfg.tariff.off) + '/kWh</span><span class="b1">Standard ' + money(cfg.tariff.std) + '</span><span class="b2">Peak ' + money(cfg.tariff.peak) + '</span></div>')}
+        ${C.card({ cls: 'span-12', title: 'Depot load plan', sub: 'Next 24 hours, hourly. Bars: what the depot draws; dashed line: plug-and-charge without a plan', action: C.legend([['EV from grid', 'teal'], ['EV from solar & battery', 'lime'], ['Building load', 'muted'], ['Sold to grid (V2G)', 'warn']]) }, '<div class="chart-slot" data-chart="i-load"></div><div class="band-key"><span class="b0">Off-peak ' + money(cfg.tariff.off) + '/kWh</span><span class="b1">Standard ' + money(cfg.tariff.std) + '</span><span class="b2">Peak ' + money(cfg.tariff.peak) + '</span><span class="risk">Outage risk (darker = likelier)</span>' + (cfg.tariff.mode === 'hourly' ? '<span class="muted">Hourly prices shown in each bar’s tooltip</span>' : '') + '</div>')}
         ${C.card({ cls: 'span-8 flush', title: 'Smart Queue', sub: 'Priority order: tightest charging window and earliest departure first. Shading shows when each vehicle charges and at which tariff.' }, queueRows(s, p))}
         <div class="span-4 stack">
           ${C.card({ title: 'Why this plan', sub: { cost: 'Optimised for lowest cost', green: 'Optimised for lowest carbon', ready: 'Optimised to be ready soonest' }[cfg.strategy] }, whyList(p, s))}
@@ -86,12 +87,12 @@
   }
   function drawLoad(slot) {
     const w = Math.max(300, slot.clientWidth || 800); const h = 250; const p = I.plan(); const s = smartSummary(p); const sl = s.sl; const n = sl.length; if (!n) { slot.innerHTML = ''; return; }
-    const L = 44, R = 10, T = 12, B = 34, iw = w - L - R, ih = h - T - B;
+    const L = 44, R = 10, T = 20, B = 34, iw = w - L - R, ih = h - T - B;
     const load = Math.max(10, ...sl.map((x) => Math.max(x.base + x.ev, x.importBase))); const showLimit = s.limit <= load * 2.2; const posMax = showLimit ? Math.max(load * 1.15, s.limit * 1.08) : load * 1.2; const negMax = Math.max(0, ...sl.map((x) => x.v2g));
     const top = VF.niceStep(posMax, 4) * Math.ceil(posMax / VF.niceStep(posMax, 4)); const bot = negMax ? Math.max(top * 0.15, negMax * 1.1) : 0;
     const y = (v) => T + (top - v) / (top + bot) * ih; const bw = iw / n;
     let g = '';
-    for (const x of sl) g += `<rect class="tb b${x.band}" x="${(L + x.i * bw).toFixed(1)}" y="${h - B + 6}" width="${bw.toFixed(1)}" height="5"/>`;
+    for (const x of sl) { g += `<rect class="tb b${x.band}" x="${(L + x.i * bw).toFixed(1)}" y="${h - B + 6}" width="${bw.toFixed(1)}" height="5"/>`; const op = Math.max(...s.ds.map((d) => d.slots[x.i].outP)); if (op > 0.005) g += `<rect class="risk-cell" x="${(L + x.i * bw + 1).toFixed(1)}" y="${T - 10}" width="${(bw - 2).toFixed(1)}" height="5" rx="2" style="opacity:${clamp(op * 7, 0.08, 1).toFixed(2)}"><title>${t(x.ms)} · outage risk ${fmt.n(op * 100)}%</title></rect>`; }
     const step = VF.niceStep(top, 4); for (let v = 0; v <= top + 1e-9; v += step) g += `<line class="grid-line" x1="${L}" x2="${w - R}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}"/><text x="${L - 6}" y="${(y(v) + 4).toFixed(1)}" text-anchor="end">${fmt.n(v)}</text>`;
     sl.forEach((x, i) => {
       const bx = L + i * bw + bw * 0.14, ww = Math.max(2, bw * 0.72); let base = 0;
@@ -209,7 +210,7 @@
           ${C.card({ cls: 'flush', title: 'Optimised routes', sub: 'Pick one to see it on the map' }, `<ul class="rt-list">${ro.routes.map((r) => `<li class="${sel && r.v.id === sel.v.id ? 'on' : ''}" data-act="i-rsel" data-id="${r.v.id}" role="button" tabindex="0"><div class="row between"><strong>${esc(r.v.name)}</strong><span class="small muted num">${t(r.depart)}–${t(r.back)}</span></div><span class="small muted">${r.stops.length} stop${r.stops.length === 1 ? "" : "s"} · ${fmt.km(r.km)} · ${fmt.kwh(r.kwh)} · ${fmt.n(sum(r.stops, (j) => j.kg))} kg${r.late ? ` · <b class="text-warn">${r.late} late</b>` : ''}</span><div class="progress"><i style="width:${clamp(r.endSoc, 0, 100).toFixed(0)}%"></i></div></li>`).join('')}</ul>`)}
           ${C.card({ title: 'Energy model', sub: sel ? `Where ${esc(sel.v.name)}’s energy goes` : '' }, breakdown || C.empty({ icon: 'zap', title: 'No route selected' }))}
         </div>
-        ${C.card({ cls: 'span-12 flush', title: `Jobs, ${ro.today ? 'today' : 'tomorrow'}`, sub: 'Time windows, cargo and the vehicle each job was given', action: !done && ro.routes.length ? `<button class="btn primary" data-act="i-dispatch">${icon('send')}${ro.today ? 'Dispatch all routes' : 'Approve for tomorrow'}</button>` : '' }, C.table([
+        ${C.card({ cls: 'span-12 flush', title: `Jobs, ${ro.today ? 'today' : 'tomorrow'}`, sub: 'Time windows, cargo and the vehicle each job was given', action: `${VF.ops && VF.ops.cfg().jobs[ro.day] ? `<button class="btn small ghost" data-act="o-jobs-reset">Use sample jobs</button>` : ''}<button class="btn small" data-act="o-jobs-import">${icon('download')}Import jobs (CSV)</button>${!done && ro.routes.length ? `<button class="btn primary" data-act="i-dispatch">${icon('send')}${ro.today ? 'Dispatch all routes' : 'Approve for tomorrow'}</button>` : ''}` }, C.table([
           { label: 'Job', render: (j) => `<strong class="mono">${esc(j.ref)}</strong><div class="small muted">${esc(j.name)}</div>` },
           { label: 'Where', render: (j) => esc(place(j.node)) },
           { label: 'Window', render: (j) => `<span class="num">${String(j.from).padStart(2, '0')}:00–${String(j.to).padStart(2, '0')}:00</span>` },
@@ -340,7 +341,7 @@
     const c = I.cfg();
     if (page === 'm-dashboard') return prevKey(page) + '|' + Math.floor(VF.now() / HOUR);
     const ev = c.event && !c.event.done ? 'E' : '';
-    return [Math.floor(VF.now() / (15 * MIN)), c.strategy, ui.iDepot, JSON.stringify(c.v2g), JSON.stringify(c.factors), c.workOrders.map((w) => w.status[0]).join(''), JSON.stringify(ui.hSel), ui.rSel, ui.iScale, c.routesDispatched, c.applied && c.applied.at, ev, I.wx.src, JSON.stringify(c.depots), JSON.stringify(c.tariff)].join('|');
+    return [Math.floor(VF.now() / (15 * MIN)), c.strategy, ui.iDepot, JSON.stringify(c.v2g), JSON.stringify(c.factors), c.workOrders.map((w) => w.status[0]).join(''), JSON.stringify(ui.hSel), ui.rSel, ui.iScale, c.routesDispatched, c.applied && c.applied.at, ev, I.wx.src, JSON.stringify(c.depots), JSON.stringify(c.tariff), VF.ops ? F().depots.map((d) => (VF.ops.cfg().grid[d.id].up ? 1 : 0)).join('') + JSON.stringify(Object.values(VF.ops.cfg().jobs).map((j) => j.length)) : ''].join('|');
   };
   const prevLive = VF.mgr.extraLive;
   VF.mgr.extraLive = (page, vals) => {
@@ -355,6 +356,7 @@
   const num = (v, a, b) => { const x = +v; return isFinite(x) && x >= a && x <= b ? x : null; };
   Object.assign(VF.ACT, {
     'i-strategy': re((el) => { I.cfg().strategy = el.dataset.k; }),
+    'i-tmode': re((el) => { I.cfg().tariff.mode = el.dataset.k; }),
     'i-depot': (el) => { ui.iDepot = el.dataset.k; VF.rerender(); },
     'i-apply': async () => {
       const p = I.plan(); const ok = await C.confirm({ title: 'Apply tonight’s charging plan?', icon: 'battery-charging', confirmLabel: 'Apply plan',
@@ -371,7 +373,7 @@
         <div class="form-grid-2" id="i-asset-fields">${assetFields(c.depots[ui.iDepot !== 'all' ? ui.iDepot : d0.id])}</div>
         <div class="form-grid-2">${C.field(`Off-peak (${VF.state.settings.currency}/kWh)`, C.input('off', c.tariff.off, 'type="number" step="0.01" min="0" max="20"'))}${C.field('Standard', C.input('std', c.tariff.std, 'type="number" step="0.01" min="0" max="20"'))}${C.field('Peak', C.input('peak', c.tariff.peak, 'type="number" step="0.01" min="0" max="20"'))}${C.field('Demand charge (per kW a month)', C.input('demand', c.tariff.demand, 'type="number" step="1" min="0" max="2000"'))}</div>`,
         onSubmit(d) {
-          const f = { gridKw: num(d.gridKw, 10, 5000), solarKwp: num(d.solarKwp, 0, 5000), bessKwh: num(d.bessKwh, 0, 10000), bessKw: num(d.bessKw, 0, 5000), ac: num(d.ac, 0, 200), dc: num(d.dc, 0, 50) };
+          const f = { gensetKw: num(d.gensetKw, 0, 5000), gridKw: num(d.gridKw, 10, 5000), solarKwp: num(d.solarKwp, 0, 5000), bessKwh: num(d.bessKwh, 0, 10000), bessKw: num(d.bessKw, 0, 5000), ac: num(d.ac, 0, 200), dc: num(d.dc, 0, 50) };
           const tf = { off: num(d.off, 0, 20), std: num(d.std, 0, 20), peak: num(d.peak, 0, 20), demand: num(d.demand, 0, 2000) };
           if (Object.values(f).some((x) => x === null) || Object.values(tf).some((x) => x === null)) return 'Check the numbers: one is missing or out of range.';
           if (f.ac + f.dc < 1) return 'A depot needs at least one charger.';
@@ -407,6 +409,7 @@
       if (!ok) return;
       if (ro.today) for (const r of ro.routes) { const v = VF.fleetVehicle(r.v.id); if (!v || ['maintenance', 'offline'].includes(v.status)) continue; const p = VF.fleetPos(v); const here = VF.nearestNode(p.lat, p.lon); VF.fleet.dispatch({ vehicleId: v.id, pts: [here].concat(r.stops.map((j) => j.node), [r.home]), km: r.km, kwh: r.kwh, minutes: r.minutes, stop: null }); }
       I.cfg().routesDispatched = ro.day;
+      if (VF.ops) for (const r of ro.routes) if (r.v.driverId) VF.ops.send('route_dispatched', { vehicle: r.v.name, stops: r.stops.length, time: t(r.depart) }, 'driver', r.v.driverId);
       VF.fleetNotice('info', ro.today ? 'Optimised routes dispatched' : 'Tomorrow’s routes approved', `${ro.routes.length} vehicles, ${ro.jobs.length - ro.unassigned.length} jobs, ${fmt.km(ro.km)} (${fmt.n(Math.max(0, (1 - ro.km / Math.max(1, ro.base.km)) * 100))}% less than list order).`);
       save(); VF.toast(ro.today ? 'Routes dispatched' : 'Routes approved'); VF.rerender();
     },
@@ -436,7 +439,7 @@
     },
   });
   function assetFields(dp) {
-    return `${C.field('Grid supply limit (kW)', C.input('gridKw', dp.gridKw, 'type="number" min="10" max="5000" step="5"'))}${C.field('Rooftop solar (kWp)', C.input('solarKwp', dp.solarKwp, 'type="number" min="0" max="5000" step="5"'))}${C.field('Depot battery (kWh)', C.input('bessKwh', dp.bessKwh, 'type="number" min="0" max="10000" step="10"'))}${C.field('Battery power (kW)', C.input('bessKw', dp.bessKw, 'type="number" min="0" max="5000" step="5"'))}${C.field(`AC chargers (${dp.acKw} kW)`, C.input('ac', dp.ac, 'type="number" min="0" max="200"'))}${C.field(`DC chargers (${dp.dcKw} kW)`, C.input('dc', dp.dc, 'type="number" min="0" max="50"'))}`;
+    return `${C.field('Grid supply limit (kW)', C.input('gridKw', dp.gridKw, 'type="number" min="10" max="5000" step="5"'))}${C.field('Rooftop solar (kWp)', C.input('solarKwp', dp.solarKwp, 'type="number" min="0" max="5000" step="5"'))}${C.field('Depot battery (kWh)', C.input('bessKwh', dp.bessKwh, 'type="number" min="0" max="10000" step="10"'))}${C.field('Battery power (kW)', C.input('bessKw', dp.bessKw, 'type="number" min="0" max="5000" step="5"'))}${C.field('Backup generator (kW)', C.input('gensetKw', dp.gensetKw || 0, 'type="number" min="0" max="5000" step="5"'))}${C.field(`AC chargers (${dp.acKw} kW)`, C.input('ac', dp.ac, 'type="number" min="0" max="200"'))}${C.field(`DC chargers (${dp.dcKw} kW)`, C.input('dc', dp.dc, 'type="number" min="0" max="50"'))}`;
   }
   Object.assign(VF.CHG, {
     'i-asset-depot': (el) => { const box = document.getElementById('i-asset-fields'); if (box) box.innerHTML = assetFields(I.cfg().depots[el.value]); },

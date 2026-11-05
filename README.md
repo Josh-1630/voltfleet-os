@@ -24,6 +24,20 @@ The EV Manager's **Intelligence** section turns fleet data into decisions. Each 
 
 Weather requests send only Accra's fixed coordinates to Open-Meteo (free, no key); offline, a modelled forecast is used. Tariffs, depot assets (supply limit, chargers, solar, battery) and V2G prices are editable in the pages. All figures are estimates until real meters, chargers and vehicles are connected.
 
+## Operations (v3: built for Africa, at Nordic level)
+
+From the market analysis (`docs/competitive-positioning.md` compares VoltFleet with each competitor type). Engines are in `js/ops.js`, pages in `js/manager-ops.js`.
+
+- **Control Tower:** one live screen showing the grid status of each depot, connectivity, the exceptions that need a decision (with one-tap actions), each depot's power sources (grid, solar, battery, generator → chargers), a 12-hour outage-risk bar, the mixed-fleet split and recent messages.
+- **Grid reliability:** a model of outage likelihood per depot and hour (higher in the evening, varying by feeder), live outages and low-voltage events. Smart charging adds energy before risky hours, switches to the depot battery or generator during an outage, and counts which vehicles are still "ready if the grid fails".
+- **Hourly day-ahead prices** (as in Nordic and EU markets), alongside ECG time-of-use.
+- **Driver Scorecards:** an eco-score from efficiency against the model's rating, braking, speed, regeneration, idling and charging habits, with a weekly trend, coaching tips and WhatsApp delivery. No location trails are used.
+- **Electrification Planner:** diesel and petrol vehicles alongside the EVs; for each, the electric replacement, yearly fuel vs energy cost, payback, range fit and the extra depot load, plus a quarter-by-quarter transition plan. Courier motorbikes move to battery swapping.
+- **Fleet Finance:** energy cost by client or job type (CSV for invoicing); battery lifecycle (health trend, years to 80%, cycles, warranty, book and battery value, depreciation); home-charging reimbursement paid by Mobile Money with SMS receipts.
+- **Alerts & Messaging:** SMS and WhatsApp per alert type, quiet hours, each driver's language (English, Twi, Hausa, French; Ewe and Ga fall back to English until translated), Unicode-aware SMS segment counts and costs, and an outbox. Messages are **simulated** until an SMS/WhatsApp provider is added on the server.
+- **Low-data mode** (Settings → Appearance, or automatic when the phone's data saver is on): no photos, map tiles or animations. The app keeps working offline.
+- **Job import:** paste a CSV from a TMS, WMS or ERP into the Route Optimizer.
+
 ## Privacy by design
 
 - **Role-based access.** Each role reaches only its own app. Opening another role's page is refused and logged.
@@ -98,6 +112,8 @@ No build step. Upload this folder to any static host:
 - `docs/market-scan.md`: vehicle data APIs, XCharge and other charger and charging-software vendors
 - `js/map.js`: street maps (Leaflet tiles, live markers, road routing, schematic fallback); `js/vendor/` holds the BSD-licensed Leaflet
 - `js/manager.js`, `js/manager-more.js`: the EV Manager pages
+- `js/ops.js`: v3 operations engine (grid reliability, alerts outbox, low-data mode, scorecards, electrification, finance, job import); `js/manager-ops.js`: Control Tower, Driver Scorecards, Electrification Planner, Fleet Finance, Alerts & Messaging
+- `docs/competitive-positioning.md`: VoltFleet vs each competitor type, and the Nordic-to-Ghana feature map
 - `js/intel.js`: the v2 optimisers (smart charging, predictive maintenance, route optimisation, V2G, ROI); `js/manager-intel.js`: the Intelligence pages
 - `js/driver.js`, `js/operator.js`, `js/admin.js`: the driver, operator and admin apps
 - `js/connect.js`: VoltFleet Connect (developer portal, consent flow, simulated API and webhooks)
