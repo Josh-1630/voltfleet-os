@@ -113,6 +113,8 @@ No build step. Upload this folder to any static host:
 - `js/map.js`: street maps (Leaflet tiles, live markers, road routing, schematic fallback); `js/vendor/` holds the BSD-licensed Leaflet
 - `js/manager.js`, `js/manager-more.js`: the EV Manager pages
 - `js/ops.js`: v3 operations engine (grid reliability, alerts outbox, low-data mode, scorecards, electrification, finance, job import); `js/manager-ops.js`: Control Tower, Driver Scorecards, Electrification Planner, Fleet Finance, Alerts & Messaging
+- `docs/security-review.md`: security review (findings, fixes, open items)
+- `js/driver-plus.js`: driver app upgrades (Mobile Money wallet, range for today's weather, eco-score, pre-cool, roadside rescue, charger reliability and fault reports, alert language, low-data mode)
 - `docs/competitive-positioning.md`: VoltFleet vs each competitor type, and the Nordic-to-Ghana feature map
 - `js/intel.js`: the v2 optimisers (smart charging, predictive maintenance, route optimisation, V2G, ROI); `js/manager-intel.js`: the Intelligence pages
 - `js/driver.js`, `js/operator.js`, `js/admin.js`: the driver, operator and admin apps

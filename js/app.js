@@ -67,7 +67,7 @@
             <span class="avatar sm">${esc(a.u.deleted ? '—' : a.u.name.split(' ').map((p) => p[0]).join(''))}</span>
             <span class="grow"><strong>${esc(a.u.deleted ? 'Deleted account' : a.u.name)}</strong><span class="small muted">${esc(a.line)}${a.meta ? ' · ' + esc(a.meta) : ''}</span></span>
             <span class="go">${icon('arrow-right')}</span></button>`).join('')}</div>
-          <p class="auth-foot faint small">${icon('lock')}<span>Demo sign-in. In production drivers verify by phone or email, and operators and admins use single sign-on with a second factor. All data here is simulated and stays in this browser.</span></p>
+          <p class="auth-foot faint small">${icon('lock')}<span>Demo sign-in. In production drivers verify by phone or email, and operators and admins use single sign-on with a second factor. All data here is simulated and shared with every visitor of this demo, so don’t enter real personal details.</span></p>
         </div>
       </section>
     </div>`;

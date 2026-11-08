@@ -57,7 +57,7 @@
       ${rows.map((r) => `<tr${o.rowAct ? ` class="clickable-row" data-act="${o.rowAct}" data-id="${esc(r.id)}"` : ''}>${cols.map((c) => `<td class="${c.align === 'r' ? 'r num' : ''} ${c.cls || ''}">${c.render ? c.render(r) : esc(r[c.key])}</td>`).join('')}</tr>`).join('')}
     </tbody></table></div>`;
   };
-  C.seg = (items, active, act, extra) => `<div class="seg" role="group">${items.map(([k, l, ic]) => `<button type="button" data-act="${act}" data-k="${k}" aria-pressed="${active === k}"${extra || ''}>${ic ? VF.icon(ic) : ''}<span>${l}</span></button>`).join('')}</div>`;
+  C.seg = (items, active, act, extra) => `<div class="seg" role="group">${items.map(([k, l, ic]) => `<button type="button" data-act="${act}" data-k="${k}" aria-pressed="${active === k}"${extra || ''}>${ic ? VF.icon(ic) : ''}<span>${esc(l)}</span></button>`).join('')}</div>`;
 
   // ---------------------------------------------------------------- battery
   C.battery = (soc, o) => {

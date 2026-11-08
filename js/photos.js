@@ -17,8 +17,9 @@
     'Ford E-Transit': 'Ford E-Transit', 'MG4': 'MG4 EV',
   };
   const P = VF.photos = { map: {}, loading: false, failed: false };
-  try { const c = JSON.parse(localStorage.getItem(CACHE) || 'null'); if (c && Date.now() - c.at < TTL) P.map = c.map || {}; } catch (e) { /* none */ }
+  try { const c = JSON.parse(localStorage.getItem(CACHE) || 'null'); if (c && Date.now() - c.at < TTL) P.map = c.map || {}; for (const k in P.map) { const p = P.map[k]; if (p && p.src) { p.src = https(p.src); p.licenseUrl = https(p.licenseUrl); p.source = https(p.source); } } } catch (e) { /* none */ }
   const save = () => { try { localStorage.setItem(CACHE, JSON.stringify({ at: Date.now(), map: P.map })); } catch (e) { /* not kept */ } };
+  const https = (u) => (/^https:\/\/[^\s"'<>]+$/i.test(String(u || '')) ? String(u) : ''); // only plain https links from the API
   const strip = (h) => { const d = document.createElement('div'); d.innerHTML = String(h || ''); return (d.textContent || '').replace(/\s+/g, ' ').trim(); };
   const articleFor = (model) => ARTICLE[model] || model.replace(/\s*\(.*\)$/, '');
 
@@ -39,14 +40,14 @@
       for (const n of (j.query.normalized || [])) back[n.to] = back[n.from] || n.from;
       for (const rd of (j.query.redirects || [])) back[rd.to] = back[rd.from] || rd.from;
       const byArticle = {};
-      for (const pg of j.query.pages || []) if (pg.thumbnail && pg.pageimage) byArticle[back[pg.title] || pg.title] = { src: pg.thumbnail.source, w: pg.thumbnail.width, h: pg.thumbnail.height, file: pg.pageimage, page: pg.title };
+      for (const pg of j.query.pages || []) if (pg.thumbnail && pg.pageimage) byArticle[back[pg.title] || pg.title] = { src: https(pg.thumbnail.source), w: pg.thumbnail.width, h: pg.thumbnail.height, file: pg.pageimage, page: pg.title };
       const files = [...new Set(Object.values(byArticle).map((x) => 'File:' + x.file))];
       const credits = {};
       if (files.length) {
         const k = await api({ action: 'query', prop: 'imageinfo', iiprop: 'extmetadata|url', titles: files.join('|') });
         for (const pg of k.query.pages || []) {
           const ii = pg.imageinfo && pg.imageinfo[0]; if (!ii) continue; const m = ii.extmetadata || {};
-          credits[pg.title.replace(/^File:/, '').replace(/ /g, '_')] = { artist: strip(m.Artist && m.Artist.value) || 'Unknown author', license: strip(m.LicenseShortName && m.LicenseShortName.value) || 'Free licence', licenseUrl: (m.LicenseUrl && m.LicenseUrl.value) || '', source: ii.descriptionurl || '' };
+          credits[pg.title.replace(/^File:/, '').replace(/ /g, '_')] = { artist: strip(m.Artist && m.Artist.value) || 'Unknown author', license: strip(m.LicenseShortName && m.LicenseShortName.value) || 'Free licence', licenseUrl: https(m.LicenseUrl && m.LicenseUrl.value), source: https(ii.descriptionurl) };
         }
       }
       for (const model of want) {
@@ -65,8 +66,10 @@
     const p = P.map[model]; const kind = VF.vehicleKind(model);
     if (!p && !P.loading && !P.failed && navigator.onLine !== false) setTimeout(() => P.load(), 0);
     if (!p || !p.src) return `<span class="vphoto art ${cls || ''}">${C.vehicleArt(kind)}</span>`;
-    return `<span class="vphoto ${cls || ''}" title="${esc(P.credit(model))}"><img src="${esc(p.src)}" alt="${esc(model)}" loading="lazy" decoding="async" referrerpolicy="no-referrer" onerror="this.parentNode.classList.add('art','failed')">${C.vehicleArt(kind, 'fallback')}</span>`;
+    return `<span class="vphoto ${cls || ''}" title="${esc(P.credit(model))}"><img src="${esc(p.src)}" alt="${esc(model)}" loading="lazy" decoding="async" referrerpolicy="no-referrer">${C.vehicleArt(kind, 'fallback')}</span>`;
   };
+  // A photo that fails to load falls back to the illustration (no inline handlers, so a strict CSP can apply).
+  document.addEventListener('error', (e) => { const t = e.target; if (t && t.tagName === 'IMG' && t.parentNode && t.parentNode.classList && t.parentNode.classList.contains('vphoto')) t.parentNode.classList.add('art', 'failed'); }, true);
   // Credits list (Settings)
   P.creditsHTML = (models) => {
     const rows = [...new Set(models)].map((m) => [m, P.map[m]]).filter(([, p]) => p && p.src);

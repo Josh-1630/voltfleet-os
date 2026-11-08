@@ -828,11 +828,31 @@ window.VF = (function () {
     } catch (e) { VF.storageOk = false; }
     try { sessionStorage.setItem(SESSION_KEY, JSON.stringify(VF.session || null)); } catch (e) { /* per-tab sign-in not kept */ }
   };
+  // State from storage or another device is untrusted: no markup characters in any text, ids stay plain tokens,
+  // and prototype keys are dropped. Pages also escape on output; this is the second layer.
+  const SAFE_CH = { '<': '‹', '>': '›', '"': '”', '`': 'ʹ', "'": '’' };
+  VF.sanitizeState = function (st) {
+    const seen = new Set();
+    const walk = (o, depth) => {
+      if (!o || typeof o !== 'object' || seen.has(o) || depth > 40) return; seen.add(o);
+      for (const k of Object.keys(o)) {
+        if (k === '__proto__' || k === 'constructor' || k === 'prototype') { delete o[k]; continue; }
+        const v = o[k];
+        if (typeof v === 'string') {
+          if (k === 'payload') continue; // OCPP log text: escaped where shown
+          let s = /[<>"`']/.test(v) ? v.replace(/[<>"`']/g, (c) => SAFE_CH[c]) : v;
+          if ((k === 'id' || /Id$/.test(k)) && !/^[\w.:@-]*$/.test(s)) s = s.replace(/[^\w.:@-]/g, '_');
+          if (s !== v) o[k] = s;
+        } else if (v && typeof v === 'object') walk(v, depth + 1);
+      }
+    };
+    walk(st, 0); return st;
+  };
   VF.load = function () {
     try { VF.session = JSON.parse(sessionStorage.getItem(SESSION_KEY)); } catch (e) { VF.session = null; }
     try {
       const raw = JSON.parse(localStorage.getItem(STORE_KEY));
-      if (raw && raw.state && raw.state.version === 2) { VF.state = raw.state; return true; }
+      if (raw && raw.state && raw.state.version === 2) { VF.state = VF.sanitizeState(raw.state); return true; }
     } catch (e) { /* storage unavailable */ }
     return false;
   };
@@ -840,7 +860,7 @@ window.VF = (function () {
   VF.adopt = function (json) {
     try {
       const raw = JSON.parse(json);
-      if (raw && raw.state && raw.state.version === 2 && (raw.state.rev || 0) > (VF.state.rev || 0)) { VF.state = raw.state; histCache = null; return true; }
+      if (raw && raw.state && raw.state.version === 2 && (raw.state.rev || 0) > (VF.state.rev || 0)) { VF.state = VF.sanitizeState(raw.state); histCache = null; return true; }
     } catch (e) { /* ignore a half-written value */ }
     return false;
   };
@@ -911,7 +931,9 @@ window.VF = (function () {
       VF.toast(`Downloading ${name}. If nothing happens, use Copy.`);
     } catch (e) { VF.toast('Download is blocked here. Use Copy.'); }
   };
-  VF.csv = (rows) => rows.map((r) => r.map((x) => (/[",\n]/.test(String(x)) ? `"${String(x).replace(/"/g, '""')}"` : x)).join(',')).join('\n');
+  // Cells that a spreadsheet would run as a formula (=, +, -, @) get a leading apostrophe; plain numbers are left alone.
+  const csvCell = (x) => { let s = x == null ? '' : String(x); if (typeof x === 'string' && /^[=+\-@\t\r]/.test(s) && !/^-?\d+(\.\d+)?$/.test(s)) s = "'" + s; return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+  VF.csv = (rows) => rows.map((r) => r.map(csvCell).join(',')).join('\n');
 
   // ------------------------------------------------------------------ map
   let staticCache = null;
@@ -1031,4 +1053,14 @@ window.VF = (function () {
   };
 
   return VF;
+
+  // Clickjacking guard: refuse to run inside another site's frame (GitHub Pages can't send frame-ancestors headers).
+  if (window.top !== window.self) {
+    let sameOrigin = false; try { sameOrigin = !!window.top.location.host; } catch (e) { sameOrigin = false; }
+    if (!sameOrigin) document.addEventListener('DOMContentLoaded', () => {
+      const d = document.createElement('div'); d.className = 'frame-guard';
+      d.innerHTML = '<p>For your security VoltFleet doesn’t run inside other websites.</p><a target="_blank" rel="noopener">Open VoltFleet</a>';
+      d.querySelector('a').href = location.href; document.body.appendChild(d);
+    });
+  }
 })();

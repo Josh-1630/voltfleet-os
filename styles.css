@@ -1827,6 +1827,8 @@ td .select { min-width: 160px; }
 .me-head .vphoto.thumb { width: 64px; }
 @media (max-width: 460px) { .wh-bal { font-size: 32px; } .tx-list li { padding: 10px 14px; gap: 10px; } }
 
+.frame-guard { position: fixed; inset: 0; z-index: 99999; display: grid; place-content: center; gap: 14px; text-align: center; padding: 24px; background: var(--bg); color: var(--ink); font: 500 15px var(--font); }
+.frame-guard a { justify-self: center; padding: 10px 18px; border-radius: 10px; background: var(--accent); color: #fff; text-decoration: none; font-weight: 600; }
 :root[data-motion="reduced"] *, :root[data-motion="reduced"] *::before, :root[data-motion="reduced"] *::after { animation: none !important; transition: none !important; }
 :root[data-motion="reduced"] .wa-slide.on, :root[data-motion="reduced"] .wa-slide:first-child { opacity: 1; }
 

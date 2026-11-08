@@ -113,7 +113,7 @@
     const state = q.get('state'); let expected = null; try { expected = sessionStorage.getItem(STATE); sessionStorage.removeItem(STATE); } catch (e) { /* none */ }
     history.replaceState(null, '', location.pathname + '#m-vehicles');
     if (q.has('error')) { VF.toast(q.get('error') === 'access_denied' ? 'Vehicle connection cancelled.' : `Smartcar: ${q.get('error_description') || q.get('error')}`); return true; }
-    if (!state || (expected && state !== expected)) { VF.toast('That connection link did not come from this device. Try again.'); return true; }
+    if (!state || !expected || state !== expected) { VF.toast('That connection link did not come from this device. Try again.'); return true; }
     try {
       const res = await call('link', { userId: q.get('user_id'), state });
       R.key = res.key; R.lastPoll = Date.now(); ingest(res.vehicles || []);

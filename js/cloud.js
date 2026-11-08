@@ -55,7 +55,8 @@
       let text = row.state_gz;
       if (!text) { const full = await fetchRow('rev,state_gz'); if (!full) return; row = full; text = full.state_gz; }
       const st = await unpack(text);
-      if (!st || st.version !== 2) return;
+      if (!st || typeof st !== 'object' || st.version !== 2) return;
+      VF.sanitizeState(st);
       if (!force && row.rev <= (VF.state.rev || 0)) return;
       st.rev = row.rev;
       VF.state = st;
@@ -92,7 +93,9 @@
       while (pushQueued) {
         pushQueued = false;
         const text = await pack(VF.state);
-        const { data, error } = await sb.rpc('world_push', { p_id: WORLD, p_state: text });
+        let res = await sb.rpc('world_push', { p_id: WORLD, p_state: text });
+        for (let i = 0; i < 5 && res.error && /slow down/i.test(res.error.message || ''); i++) { await new Promise((r) => setTimeout(r, 150 + i * 100)); res = await sb.rpc('world_push', { p_id: WORLD, p_state: text }); } // server throttles floods
+        const { data, error } = res;
         if (error) throw error;
         VF.state.rev = Math.max(VF.state.rev || 0, data.rev);
       }
