@@ -806,8 +806,10 @@ window.VF = (function () {
   // ------------------------------------------------------------------ persistence & cross-tab sync
   // One shared world per browser: every tab reads and writes the same state, tagged with a revision.
   // Who is signed in is per tab (sessionStorage), so a driver tab and an operator tab can sit side by side.
-  const STORE_KEY = 'voltfleet-os:v2', REV_KEY = 'voltfleet-os:rev', SESSION_KEY = 'voltfleet-os:session';
+  // The public demo lives under one key; a signed-in organisation's workspace under its own (VF.setStoreKey).
+  let STORE_KEY = 'voltfleet-os:v2', REV_KEY = 'voltfleet-os:rev'; const SESSION_KEY = 'voltfleet-os:session';
   VF.STORE_KEY = STORE_KEY;
+  VF.setStoreKey = (k) => { STORE_KEY = k; REV_KEY = k + ':rev'; VF.STORE_KEY = k; };
   VF.storageOk = true;
   // Keep a copy on this device (fast reloads, offline use) without claiming a new revision.
   // Serialise the world for storage and sync. Vehicles connected live (Smartcar) belong to one device and

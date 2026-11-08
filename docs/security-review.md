@@ -21,8 +21,8 @@
 | 7 | Links from the Wikipedia API not restricted to https | Low | **Fixed** |
 | 8 | Prototype pollution from tampered saved data | Low | **Fixed** |
 | 9 | Sign-in page said demo data "stays in this browser" (it's shared) | Privacy | **Fixed** (accurate warning) |
-| A | No real sign-in: roles are chosen in the browser | Critical for production | Open: architecture work |
-| B | Shared demo world is readable by anyone with the public key | High for production | Open: same fix as A |
+| A | No real sign-in: roles are chosen in the browser | Critical for production | **Fixed for real accounts** (Supabase Auth, server-set roles, private workspaces with RLS; see `docs/accounts.md`). The public demo stays open by design. |
+| B | Shared demo world is readable by anyone with the public key | High for production | **Resolved for customers:** real accounts work in private workspaces; the demo holds sample data only |
 | C | Device keys held in localStorage | Medium | Mitigated by CSP; fix with A |
 | D | OCPP password accepted in the URL (`?key=`) | Medium | Open: production setting |
 | E | Edge Functions allow `http://localhost:8080` in CORS | Low | Open: one secret to set |
@@ -85,6 +85,20 @@ Verified: a write to another world id is refused, and anon has no table INSERT/U
 - Third-party scripts (Leaflet, supabase-js, qrcode) are vendored with fixed versions, not loaded from CDNs.
 - The service worker caches only same-origin GET requests.
 - Real (Smartcar) vehicles are stripped from every save, so they never reach the shared world.
+
+## Update, 8 November 2026: real accounts
+
+Real sign-in is now in place (`docs/accounts.md`). Each organisation has a private workspace in `public.org_worlds`, readable only by its members through RLS and writable only through server functions that derive the organisation from the signed-in user. Roles are set on the server; invites need a confirmed email; account deletion is self-service.
+
+Tested in the live database with temporary users, removed afterwards:
+- anonymous callers can't use the account functions or read profiles;
+- unconfirmed accounts can't create organisations or write workspaces;
+- one organisation can't see another's workspace, organisation or people;
+- direct writes to profiles and invites are refused, so nobody can make themselves admin;
+- invites join the right organisation;
+- account deletion removes the login.
+
+The Supabase advisor's remaining warnings list functions that signed-in users may call by design; each checks the caller itself.
 
 ## Open items and how to fix them
 

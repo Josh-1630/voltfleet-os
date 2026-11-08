@@ -36,6 +36,15 @@
     const first = accts.find((a) => !a.u.deleted);
     const conns = s.stations.reduce((n, st) => n + st.connectors.length, 0);
     const makes = new Set(Object.values(VF.MODELS).map((m) => m.oem)).size;
+    const demoHTML = `<div class="role-tabs" role="tablist" aria-label="Account type">${ROLES.map(([k, l, ic]) => `<button type="button" role="tab" aria-selected="${role === k}" data-act="login-role" data-role="${k}">${icon(ic)}<span>${l}</span></button>`).join('')}</div>
+          <div class="divider"><span>pick a demo account</span></div>
+          <div class="demo-list">${accts.map((a) => `<button type="button" class="demo-acct" data-act="signin" data-id="${a.u.id}" ${a.u.deleted ? 'disabled' : ''}>
+            <span class="avatar sm">${esc(a.u.deleted ? '—' : a.u.name.split(' ').map((p) => p[0]).join(''))}</span>
+            <span class="grow"><strong>${esc(a.u.deleted ? 'Deleted account' : a.u.name)}</strong><span class="small muted">${esc(a.line)}${a.meta ? ' · ' + esc(a.meta) : ''}</span></span>
+            <span class="go">${icon('arrow-right')}</span></button>`).join('')}</div>`;
+    const real = VF.auth && VF.auth.enabled;
+    if (real && !loginUi.mode) loginUi.mode = /[?&]demo\b/.test(location.search) ? 'demo' : 'signin';
+    if (!real) loginUi.mode = 'demo';
     $('#root').innerHTML = `<div class="auth">
       <section class="auth-art" aria-hidden="false">
         <canvas id="auth-canvas" aria-hidden="true"></canvas>
@@ -54,20 +63,8 @@
       </section>
       <section class="auth-panel">
         <div class="auth-card">
-          <div class="auth-head"><div class="row between"><h2>Sign in</h2><span data-install-slot="signin">${VF.install ? VF.install.slot('signin') : ''}</span></div><p class="muted">Choose how you use VoltFleet.</p></div>
-          <div class="role-tabs" role="tablist" aria-label="Account type">${ROLES.map(([k, l, ic]) => `<button type="button" role="tab" aria-selected="${role === k}" data-act="login-role" data-role="${k}">${icon(ic)}<span>${l}</span></button>`).join('')}</div>
-          <form id="login-form" class="auth-form" novalidate>
-            <label class="field"><span>Email</span><input class="input lg" id="login-email" type="email" autocomplete="username" value="${esc(first ? first.u.email : '')}" required></label>
-            <label class="field"><span class="row between"><span>Password</span><span class="faint small">Any password works in the demo</span></span><input class="input lg" id="login-pass" type="password" autocomplete="current-password" value="demo-password" required></label>
-            <div class="form-error" id="login-error" ${loginUi.error ? '' : 'hidden'}>${icon('warn')}<span>${esc(loginUi.error)}</span></div>
-            <button class="btn primary big" type="submit">Sign in</button>
-          </form>
-          <div class="divider"><span>or pick a demo account</span></div>
-          <div class="demo-list">${accts.map((a) => `<button type="button" class="demo-acct" data-act="signin" data-id="${a.u.id}" ${a.u.deleted ? 'disabled' : ''}>
-            <span class="avatar sm">${esc(a.u.deleted ? '—' : a.u.name.split(' ').map((p) => p[0]).join(''))}</span>
-            <span class="grow"><strong>${esc(a.u.deleted ? 'Deleted account' : a.u.name)}</strong><span class="small muted">${esc(a.line)}${a.meta ? ' · ' + esc(a.meta) : ''}</span></span>
-            <span class="go">${icon('arrow-right')}</span></button>`).join('')}</div>
-          <p class="auth-foot faint small">${icon('lock')}<span>Demo sign-in. In production drivers verify by phone or email, and operators and admins use single sign-on with a second factor. All data here is simulated and shared with every visitor of this demo, so don’t enter real personal details.</span></p>
+          ${real ? VF.auth.panel(loginUi, demoHTML) : `<div class="auth-head"><h2>Sign in</h2><p class="muted">Choose how you use VoltFleet.</p></div>${demoHTML}`}
+          <p class="auth-foot faint small">${icon('lock')}<span>${real ? esc(VF.auth.foot(loginUi)) : 'Demo sign-in. All data here is simulated and shared with every visitor of this demo, so don’t enter real personal details.'}</span></p>
         </div>
       </section>
     </div>`;
@@ -278,7 +275,7 @@
         ${app.settingsHref ? `<a role="menuitem" href="${app.settingsHref}" data-act="pop-close-nav">${icon('settings')}Settings</a>` : ''}
         ${VF.install && VF.install.available() ? `<button role="menuitem" data-act="install-app">${icon('smartphone')}Install app</button>` : ''}
         <button role="menuitemcheckbox" aria-checked="${dark}" data-act="theme-toggle">${icon(dark ? 'sun' : 'moon')}${dark ? 'Light mode' : 'Dark mode'}</button>
-        <button role="menuitem" data-act="signout">${icon('arrow-left-right')}Switch account</button>
+        ${VF.mode === 'account' ? `<button role="menuitem" data-act="auth-acct">${icon('users')}Account & team</button>` : `<button role="menuitem" data-act="signout">${icon('arrow-left-right')}Switch account</button>`}
         <button role="menuitem" data-act="signout">${icon('log-out')}Sign out</button>
       </div>`);
   }
@@ -340,6 +337,8 @@
     current = { role: r, page: h };
     if (roleChanged || !$('#view')) renderShell(); else renderPage(false);
   }
+  VF.renderSignin = () => { if (!role()) renderSignin(); };
+  VF.routeChange = () => routeChange();
   function signIn(userId) {
     const u = VF.user(userId); if (!u || u.deleted) return;
     VF.session = { userId };
@@ -350,6 +349,7 @@
     if (VF.route() === home) routeChange(); else location.hash = home;
   }
   VF.signOut = (msg) => {
+    if (VF.mode === 'account' && VF.auth) { VF.auth.signOut(false); return; }
     if (VF.session) VF.audit(VF.session.userId, 'sign-out', '');
     VF.session = null; current = null; VF.ui.driver.sheet = null; VF.ui.connect.flow = null; VF.renderConnect(); VF.save();
     if (VF.route() === 'signin') routeChange(); else location.hash = 'signin';
@@ -453,11 +453,19 @@
     window.addEventListener('hashchange', () => { closePops(); setDrawer(false); routeChange(); });
     window.addEventListener('storage', onStorage);
     VF.onRemoteState = () => { VF.ensureConnect(); VF.ensureFleet(); if (current) refreshUi(); else if (!role() && $('.auth')) { /* sign-in page: nothing live to refresh */ } };
-    if (VF.cloud && VF.cloud.start) VF.cloud.start();
     window.addEventListener('pagehide', () => { try { const l = JSON.parse(localStorage.getItem(LEADER_KEY) || 'null'); if (l && l.id === TAB_ID) localStorage.removeItem(LEADER_KEY); } catch (e) { /* ignore */ } });
     document.addEventListener('submit', (e) => { if (e.target.getAttribute('id') === 'login-form') { e.preventDefault(); signInByEmail(); } });
     window.addEventListener('resize', VF.debounce(drawCharts, 150));
-    routeChange();
+    const startDemo = () => { VF.mode = 'demo'; if (VF.cloud && VF.cloud.start) VF.cloud.start(); routeChange(); };
+    if (VF.auth && VF.auth.enabled) {
+      $('#root').innerHTML = '<div class="boot-splash" role="status"><span class="spinner"></span><span>Opening VoltFleet…</span></div>';
+      VF.auth.init().then(async (acct) => {
+        if (acct && acct.status !== 'ready' && acct.org) acct.status = 'ready';
+        if (acct && acct.status === 'ready' && acct.org) { await VF.auth.enter(acct); routeChange(); return; }
+        if (acct) { VF.session = null; loginUi.mode = acct.status === 'unconfirmed' ? 'check' : 'onboard'; loginUi.email = acct.email || ''; }
+        startDemo();
+      }).catch((e) => { console.warn('VoltFleet sign-in:', e); startDemo(); });
+    } else startDemo();
     if (VF.real) VF.real.handleRedirect().then((back) => { if (!back && VF.real.connected()) VF.real.poll(); });
     setInterval(tick, 1000);
     if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol) && window.self === window.top) {

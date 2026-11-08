@@ -13,6 +13,11 @@
   const cloud = VF.cloud = { status: 'off', leader: false, clientId: CLIENT, lastRemote: 0, region: cfg.region || '', error: '' };
   if (!cfg.url || !cfg.key || !window.supabase || typeof window.supabase.createClient !== 'function') return;
 
+  // What we sync: the public demo world, or (signed in) the organisation's private workspace.
+  let target = { org: null, onAdopt: null };
+  const T = () => (target.org
+    ? { table: 'org_worlds', col: 'org_id', id: target.org, tick: (c, e, s) => sb.rpc('org_world_tick', { p_client: c, p_expected: e, p_state: s }), push: (s) => sb.rpc('org_world_push', { p_state: s }) }
+    : { table: 'worlds', col: 'id', id: WORLD, tick: (c, e, s) => sb.rpc('world_tick', { p_id: WORLD, p_client: c, p_expected: e, p_state: s }), push: (s) => sb.rpc('world_push', { p_id: WORLD, p_state: s }) });
   let sb = null, inflightTick = false, lastTick = 0, pushing = false, pushQueued = false, adopting = Promise.resolve();
   const online = () => cloud.status === 'live' || cloud.status === 'live-poll';
   const setStatus = (s, err) => { if (cloud.status === s && !err) return; cloud.status = s; cloud.error = err || ''; if (VF.onCloudStatus) VF.onCloudStatus(); };
@@ -41,7 +46,7 @@
 
   // ---- reading
   async function fetchRow(cols) {
-    const { data, error } = await sb.from('worlds').select(cols).eq('id', WORLD).maybeSingle();
+    const t = T(); const { data, error } = await sb.from(t.table).select(cols).eq(t.col, t.id).maybeSingle();
     if (error) throw error;
     return data;
   }
@@ -60,6 +65,7 @@
       if (!force && row.rev <= (VF.state.rev || 0)) return;
       st.rev = row.rev;
       VF.state = st;
+      if (target.onAdopt) try { target.onAdopt(); } catch (e) { /* keep going */ }
       VF.saveLocal();
       if (VF.onRemoteState) VF.onRemoteState();
     }).catch((e) => console.warn('VoltFleet sync: could not apply update', e));
@@ -75,7 +81,7 @@
     try {
       const expected = VF.state.rev || 0;
       const text = await pack(VF.state);
-      const { data, error } = await sb.rpc('world_tick', { p_id: WORLD, p_client: CLIENT, p_expected: expected, p_state: text });
+      const { data, error } = await T().tick(CLIENT, expected, text);
       if (error) throw error;
       cloud.leader = !!data.leader;
       if (data.ok) { if ((VF.state.rev || 0) === expected) VF.state.rev = data.rev; cloud.lastRemote = Date.now(); }
@@ -93,8 +99,8 @@
       while (pushQueued) {
         pushQueued = false;
         const text = await pack(VF.state);
-        let res = await sb.rpc('world_push', { p_id: WORLD, p_state: text });
-        for (let i = 0; i < 5 && res.error && /slow down/i.test(res.error.message || ''); i++) { await new Promise((r) => setTimeout(r, 150 + i * 100)); res = await sb.rpc('world_push', { p_id: WORLD, p_state: text }); } // server throttles floods
+        let res = await T().push(text);
+        for (let i = 0; i < 5 && res.error && /slow down/i.test(res.error.message || ''); i++) { await new Promise((r) => setTimeout(r, 150 + i * 100)); res = await T().push(text); } // server throttles floods
         const { data, error } = res;
         if (error) throw error;
         VF.state.rev = Math.max(VF.state.rev || 0, data.rev);
@@ -113,22 +119,24 @@
     setStatus('error', 'Sync paused: ' + (e && e.message ? e.message : 'network error') + '. Working on this device only.');
   }
 
-  cloud.start = async function () {
+  cloud.start = async function (opts) {
+    target = { org: opts && opts.org ? opts.org : null, onAdopt: opts && opts.onAdopt };
     setStatus('connecting');
     try {
-      sb = window.supabase.createClient(cfg.url, cfg.key, { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } });
+      sb = VF.sb || window.supabase.createClient(cfg.url, cfg.key, { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } });
       const row = await fetchRow('rev,state_gz,leader_id');
       if (row && row.state_gz) await adoptRow(row, true);
       else {
         // First device ever: publish this device's world as the shared one.
         VF.state.rev = 0;
-        const { data, error } = await sb.rpc('world_tick', { p_id: WORLD, p_client: CLIENT, p_expected: 0, p_state: await pack(VF.state) });
+        const { data, error } = await T().tick(CLIENT, 0, await pack(VF.state));
         if (error) throw error;
-        VF.state.rev = data.rev; cloud.leader = !!data.leader;
+        if (data.ok) { VF.state.rev = data.rev; cloud.leader = !!data.leader; } else if (data.reason === 'stale') await adoptRow(await fetchRow('rev,state_gz,leader_id'), true);
       }
       cloud.lastRemote = 0; // try to lead straight away; the lease decides
-      sb.channel('world-' + WORLD)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'worlds', filter: 'id=eq.' + WORLD }, (p) => adoptRow(p.new))
+      const t = T();
+      sb.channel('world-' + t.id)
+        .on('postgres_changes', { event: '*', schema: 'public', table: t.table, filter: `${t.col}=eq.${t.id}` }, (p) => adoptRow(p.new))
         .subscribe((s) => { if (s === 'SUBSCRIBED') setStatus('live'); else if (s === 'CHANNEL_ERROR' || s === 'TIMED_OUT') setStatus('live-poll'); });
       setStatus('live');
     } catch (e) { fail(e); }
