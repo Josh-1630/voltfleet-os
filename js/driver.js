@@ -178,7 +178,7 @@
       ['car', 'Odometer', `<span data-live="odo">${fmt.n(v.odo)} km</span>`],
       ['warn', 'Lowest tyre', has(m, 'tyres') ? `${Math.min(...v.tyres)} psi` : '<span class="faint">n/a</span>'],
     ];
-    return card(`${span}`, 'Vehicle health', `<button class="link-btn" data-act="d-go" data-tab="driver-vehicle">Details</button>`, `<div class="metric-grid">${items.map(([ic, l, val]) => `<div class="metric">${icon(ic)}<span class="stat-label">${l}</span><span class="stat-value sm">${val}</span></div>`).join('')}</div>`);
+    return card(`${span}`, 'Vehicle health', `<button class="link-btn" data-act="d-go" data-tab="driver-vehicle">Details</button>`, `${VF.c && VF.c.vehicleImg ? `<div class="d-health-photo">${VF.c.vehicleImg(v.model, 'cover')}</div>` : ''}<div class="metric-grid">${items.map(([ic, l, val]) => `<div class="metric">${icon(ic)}<span class="stat-label">${l}</span><span class="stat-value sm">${val}</span></div>`).join('')}</div>`);
   }
   function updatesCard(d, span) {
     const list = VF.state.notices.filter((n) => n.driverId === d.id).slice(0, 4);

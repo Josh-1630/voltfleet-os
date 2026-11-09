@@ -100,6 +100,8 @@ Tested in the live database with temporary users, removed afterwards:
 
 The Supabase advisor's remaining warnings list functions that signed-in users may call by design; each checks the caller itself.
 
+**9 November 2026:** two-factor sign-in (TOTP) is now required for staff accounts and enforced in the database: RLS policies and server functions check the session's `aal2` level, tested with temporary users (removed afterwards). See `docs/accounts.md`.
+
 ## Open items and how to fix them
 
 **A. Real sign-in and server-side authorisation (Critical before real customers).** Today anyone can choose any role, including Admin. Role checks run only in the browser, and the simulation runs in visitors' browsers. Before production:

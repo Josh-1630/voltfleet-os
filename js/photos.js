@@ -1,4 +1,7 @@
 /* VoltFleet OS — real vehicle photos.
+   Bundled: every catalogue model ships with a real, freely licensed photo in img/cars/ (credits in js/car-photos.js),
+   so cars always show as real cars, offline and in low-data mode. The Wikipedia lookup below is only a fallback
+   for models that aren't bundled.
    Each model's photo is the lead image of its Wikipedia article, limited to freely licensed images
    (pilicense=free), loaded at 640 px through the Wikipedia API (CORS: origin=*). The photographer and licence
    come from the file's metadata and are shown on hover and in Settings → Data & privacy → Photo credits.
@@ -17,7 +20,9 @@
     'Ford E-Transit': 'Ford E-Transit', 'MG4': 'MG4 EV',
   };
   const P = VF.photos = { map: {}, loading: false, failed: false };
+  const BUNDLED = VF.CAR_PHOTOS || {};
   try { const c = JSON.parse(localStorage.getItem(CACHE) || 'null'); if (c && Date.now() - c.at < TTL) P.map = c.map || {}; for (const k in P.map) { const p = P.map[k]; if (p && p.src) { p.src = https(p.src); p.licenseUrl = https(p.licenseUrl); p.source = https(p.source); } } } catch (e) { /* none */ }
+  Object.assign(P.map, BUNDLED); // bundled photos always win
   const save = () => { try { localStorage.setItem(CACHE, JSON.stringify({ at: Date.now(), map: P.map })); } catch (e) { /* not kept */ } };
   const https = (u) => (/^https:\/\/[^\s"'<>]+$/i.test(String(u || '')) ? String(u) : ''); // only plain https links from the API
   const strip = (h) => { const d = document.createElement('div'); d.innerHTML = String(h || ''); return (d.textContent || '').replace(/\s+/g, ' ').trim(); };
@@ -29,7 +34,7 @@
   }
   // Fetch photos (and their credits) for every model we don't have yet: two requests for all of them.
   P.load = async (models) => {
-    const want = [...new Set((models || Object.keys(VF.MODELS)).filter((m) => !P.map[m]))];
+    const want = [...new Set((models || Object.keys(VF.MODELS)).filter((m) => !P.map[m] && !BUNDLED[m]))];
     if (!want.length || P.loading) return;
     P.loading = true;
     try {
@@ -59,7 +64,7 @@
       if (VF.rerender) VF.rerender();
     } catch (e) { P.failed = true; } finally { P.loading = false; }
   };
-  P.credit = (model) => { const p = P.map[model]; return p && p.src ? `Photo: ${p.artist}, ${p.license}, via Wikimedia Commons` : ''; };
+  P.credit = (model) => { const p = P.map[model]; return p && p.src ? `${model} · photo: ${p.artist || 'Wikimedia Commons contributor'}, ${p.license || 'free licence'}, via Wikimedia Commons` : ''; };
 
   // Vehicle image: the real photo when we have one, the illustration otherwise (and if the photo fails to load).
   C.vehicleImg = (model, cls) => {
@@ -70,6 +75,8 @@
   };
   // A photo that fails to load falls back to the illustration (no inline handlers, so a strict CSP can apply).
   document.addEventListener('error', (e) => { const t = e.target; if (t && t.tagName === 'IMG' && t.parentNode && t.parentNode.classList && t.parentNode.classList.contains('vphoto')) t.parentNode.classList.add('art', 'failed'); }, true);
+  // A real photo for a brand: the catalogue model of that make (used where people pick a brand, not a car).
+  C.brandImg = (oem, cls) => { const m = Object.keys(VF.MODELS).find((k) => VF.MODELS[k].oem === oem && P.map[k] && P.map[k].src); return m ? C.vehicleImg(m, cls) : ''; };
   // Credits list (Settings)
   P.creditsHTML = (models) => {
     const rows = [...new Set(models)].map((m) => [m, P.map[m]]).filter(([, p]) => p && p.src);

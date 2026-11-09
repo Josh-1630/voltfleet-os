@@ -1854,6 +1854,19 @@ td .select { min-width: 160px; }
 .btn.danger { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 40%, var(--line)); }
 @media (max-width: 560px) { .acct-grid, .type-grid { grid-template-columns: minmax(0, 1fr); } }
 
+.mfa-enroll { display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 16px; align-items: start; }
+.mfa-qr { width: 180px; height: 180px; padding: 10px; border-radius: 14px; background: #fff; border: 1px solid var(--line); image-rendering: pixelated; }
+.mfa-enroll ol { margin: 0 0 10px; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; color: var(--ink-2); }
+.mfa-secret { display: flex; align-items: center; gap: 6px; padding: 8px 10px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--line); }
+.mfa-secret code { font-size: 13px; letter-spacing: .04em; word-break: break-all; flex: 1; }
+.acct-mfa { border-top: 1px solid var(--line); padding-top: 12px; }
+@media (max-width: 520px) { .mfa-enroll { grid-template-columns: minmax(0, 1fr); justify-items: center; } }
+
+.brand-tile .vphoto.brand { width: 100%; height: 64px; border-radius: 8px; overflow: hidden; margin-bottom: 6px; display: block; aspect-ratio: auto; }
+.brand-tile .vphoto.brand img { width: 100%; height: 100%; object-fit: cover; }
+.d-health-photo .vphoto.cover { display: block; height: 130px; aspect-ratio: auto; border-radius: 12px; overflow: hidden; margin-bottom: 4px; }
+.d-health-photo .vphoto.cover img { width: 100%; height: 100%; object-fit: cover; }
+
 :root[data-motion="reduced"] *, :root[data-motion="reduced"] *::before, :root[data-motion="reduced"] *::after { animation: none !important; transition: none !important; }
 :root[data-motion="reduced"] .wa-slide.on, :root[data-motion="reduced"] .wa-slide:first-child { opacity: 1; }
 

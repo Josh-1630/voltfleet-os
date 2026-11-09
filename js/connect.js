@@ -238,7 +238,7 @@
         <button class="btn primary big" data-act="cx-step" data-step="brand">Continue</button>
         <p class="faint small center">By continuing you agree to the VoltFleet Connect privacy notice.${f.mode === 'test' ? ' Test mode: no real vehicle is connected.' : ''}</p>`;
     } else if (f.step === 'brand') {
-      body = `<h2>Select your vehicle's brand</h2><div class="brand-grid">${BRANDS.map((b) => `<button type="button" class="brand-tile${dv && VF.model(dv).oem === b ? ' mine' : ''}" data-act="cx-brand" data-b="${b}"><strong>${esc(b)}</strong><span class="faint small">${SOURCE_LABEL[sourceOf(b)]}</span></button>`).join('')}
+      body = `<h2>Select your vehicle's brand</h2><div class="brand-grid">${BRANDS.map((b) => `<button type="button" class="brand-tile${dv && VF.model(dv).oem === b ? ' mine' : ''}" data-act="cx-brand" data-b="${b}">${VF.c.brandImg ? VF.c.brandImg(b, 'brand') : ''}<strong>${esc(b)}</strong><span class="faint small">${SOURCE_LABEL[sourceOf(b)]}</span></button>`).join('')}
         <button type="button" class="brand-tile wide" data-act="cx-brand" data-b="OBD"><strong>Another EV</strong><span class="faint small">Pair a VoltFleet plug-in device</span></button></div>`;
     } else if (f.step === 'login') {
       const dongle = f.brand === 'OBD' || sourceOf(f.brand) === 'obd_dongle';

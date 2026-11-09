@@ -136,13 +136,13 @@
     set(on) { try { localStorage.setItem(LKEY, on ? 'on' : 'off'); } catch (e) { /* not kept */ } document.documentElement.toggleAttribute('data-lite', on); },
     settingsCard() {
       const on = L.get(); const net = navigator.connection; const kind = net && net.effectiveType ? net.effectiveType.toUpperCase() : null;
-      return VF.c.card({ title: 'Low-data mode', sub: 'For 2G/3G, bundles and patchy coverage. The app keeps working offline and syncs when the network returns.' }, VF.c.seg([['off', 'Standard'], ['on', 'Low data', 'wifi-off']], on ? 'on' : 'off', 'lite-set') + `<ul class="why small"><li>${VF.icon('check')}<span>Turns off vehicle photos, street-map tiles and animations; maps switch to the light schematic.</span></li><li>${VF.icon('check')}<span>Everything you do is saved on this device first and synced later.</span></li><li>${VF.icon('check')}<span>Alerts still reach drivers by SMS when mobile data is off.</span></li></ul>${kind ? `<p class="small muted">Your connection: ${esc(kind)}${net.saveData ? ' · data saver on' : ''}.</p>` : ''}`);
+      return VF.c.card({ title: 'Low-data mode', sub: 'For 2G/3G, bundles and patchy coverage. The app keeps working offline and syncs when the network returns.' }, VF.c.seg([['off', 'Standard'], ['on', 'Low data', 'wifi-off']], on ? 'on' : 'off', 'lite-set') + `<ul class="why small"><li>${VF.icon('check')}<span>Turns off street-map tiles and animations; maps switch to the light schematic. Car photos stay: they come with the app.</span></li><li>${VF.icon('check')}<span>Everything you do is saved on this device first and synced later.</span></li><li>${VF.icon('check')}<span>Alerts still reach drivers by SMS when mobile data is off.</span></li></ul>${kind ? `<p class="small muted">Your connection: ${esc(kind)}${net.saveData ? ' · data saver on' : ''}.</p>` : ''}`);
     },
   };
   L.set(L.get());
   if (VF.motion) { const r0 = VF.motion.reduced; VF.motion.reduced = () => L.get() || r0(); }
   if (VF.maps) { const e0 = VF.maps.enabled; VF.maps.enabled = () => !L.get() && e0(); }
-  if (VF.c.vehicleImg) { const v0 = VF.c.vehicleImg; VF.c.vehicleImg = (model, cls) => (L.get() ? `<span class="vphoto art ${cls || ''}">${VF.c.vehicleArt(VF.vehicleKind(model))}</span>` : v0(model, cls)); }
+  // Vehicle photos ship with the app (img/cars), so they stay on in low-data mode: they're cached after first view.
   Object.assign(VF.ACT, { 'lite-set': (el) => { L.set(el.dataset.k === 'on'); VF.toast(el.dataset.k === 'on' ? 'Low-data mode on' : 'Standard mode'); VF.rerender(); } });
 
   // ================================================================ driver scorecards

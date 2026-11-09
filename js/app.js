@@ -460,11 +460,12 @@
     if (VF.auth && VF.auth.enabled) {
       $('#root').innerHTML = '<div class="boot-splash" role="status"><span class="spinner"></span><span>Opening VoltFleet…</span></div>';
       VF.auth.init().then(async (acct) => {
-        if (acct && acct.status !== 'ready' && acct.org) acct.status = 'ready';
-        if (acct && acct.status === 'ready' && acct.org) { await VF.auth.enter(acct); routeChange(); return; }
-        if (acct) { VF.session = null; loginUi.mode = acct.status === 'unconfirmed' ? 'check' : 'onboard'; loginUi.email = acct.email || ''; }
+        const step = await VF.auth.next(acct);
+        if (step === 'enter') { await VF.auth.enter(acct); routeChange(); return; }
+        if (VF.session && VF.session.account) VF.session = null; // the account session ended: never fall back into the demo as that person
+        if (acct) { VF.session = null; loginUi.mode = step; loginUi.email = acct.email || ''; if (step === 'mfa-enroll') await VF.auth.startEnroll(); }
         startDemo();
-      }).catch((e) => { console.warn('VoltFleet sign-in:', e); startDemo(); });
+      }).catch((e) => { console.warn('VoltFleet sign-in:', e); if (VF.session && VF.session.account) VF.session = null; startDemo(); });
     } else startDemo();
     if (VF.real) VF.real.handleRedirect().then((back) => { if (!back && VF.real.connected()) VF.real.poll(); });
     setInterval(tick, 1000);
