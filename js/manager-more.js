@@ -148,7 +148,7 @@
           { label: 'Vehicle', render: (d) => { const v = d.vehicleId && VF.fleetVehicle(d.vehicleId); return v ? `${esc(v.name)} ${C.badge(v.status)}` : '<span class="muted">None</span>'; } },
           { label: 'Trips (10 days)', align: 'r', render: (d) => dTrips(d).length },
           { label: 'Distance', align: 'r', render: (d) => fmt.km(sum(dTrips(d), (t) => t.km)) },
-          { label: 'Driving score', render: (d) => `<div class="score"><div class="progress sm"><i class="${d.score >= 85 ? 'ok' : d.score >= 75 ? '' : 'warn'}" style="width:${d.score}%"></i></div><span class="num">${d.score}</span></div>` },
+          { label: 'Driving score', render: (d) => `<div class="score"><div class="progress sm"><i class="${d.score >= 85 ? 'ok' : d.score >= 75 ? '' : 'warn'}" style="width:${VF.clamp(+d.score || 0, 0, 100)}%"></i></div><span class="num">${esc(d.score)}</span></div>` },
           { label: '', align: 'r', render: (d) => `<button class="icon-btn" data-act="m-del-driver" data-id="${d.id}" aria-label="Remove ${esc(d.name)}" data-tip="Remove driver">${icon('trash-2')}</button>` },
         ], drivers, { empty: { icon: 'users', title: q ? 'No drivers match' : 'No drivers yet', text: q ? 'Try another name or licence number.' : 'Add your drivers to assign them to vehicles.' } }))}
         ${C.card({ cls: 'span-12 flush', title: 'Vehicle performance', sub: 'Last 30 days', action: `<button class="btn small" data-act="m-rep-dl" data-k="fleet">${icon('download')}Export CSV</button>` }, C.table([

@@ -820,7 +820,9 @@ window.VF = (function () {
     try { sessionStorage.setItem(SESSION_KEY, JSON.stringify(VF.session || null)); } catch (e) { /* per-tab sign-in not kept */ }
   };
   VF.save = function () {
-    if (VF.cloud && VF.cloud.online && VF.cloud.online()) { VF.cloud.push(); return; }
+    // Synced worlds: the revision belongs to the server, never counted up here (QA R1-02). Offline actions are kept
+    // as pending changes and sent when the connection is back.
+    if (VF.cloud && VF.cloud.active && VF.cloud.active()) { VF.cloud.push(); return; }
     try {
       const stored = Number(localStorage.getItem(REV_KEY)) || 0;
       VF.state.rev = Math.max(VF.state.rev || 0, stored) + 1;
@@ -833,6 +835,9 @@ window.VF = (function () {
   // State from storage or another device is untrusted: no markup characters in any text, ids stay plain tokens,
   // and prototype keys are dropped. Pages also escape on output; this is the second layer.
   const SAFE_CH = { '<': '‹', '>': '›', '"': '”', '`': 'ʹ', "'": '’' };
+  // Fields that are always numbers: a string here (e.g. "100%;position:fixed…") is turned back into a number, so it
+  // can't restyle a page through style="width:…%" or break calculations (QA R1-12).
+  const NUM_KEYS = new Set(['soc', 'score', 'eco', 'targetSoc', 'kw', 'kwh', 'price', 'cost', 'odo', 'km', 'lat', 'lon', 'amount', 'speed', 'tz', 'reserve', 'rev', 'seq', 'socStart', 'socEnd', 'soh', 'eff', 'start', 'end', 't', 'at', 'bessKwh', 'gensetKw', 'minutes', 'fee', 'balance']);
   VF.sanitizeState = function (st) {
     const seen = new Set();
     const walk = (o, depth) => {
@@ -840,6 +845,7 @@ window.VF = (function () {
       for (const k of Object.keys(o)) {
         if (k === '__proto__' || k === 'constructor' || k === 'prototype') { delete o[k]; continue; }
         const v = o[k];
+        if (typeof v === 'string' && NUM_KEYS.has(k)) { const n = Number(v); o[k] = Number.isFinite(n) ? n : 0; continue; }
         if (typeof v === 'string') {
           if (k === 'payload') continue; // OCPP log text: escaped where shown
           let s = /[<>"`']/.test(v) ? v.replace(/[<>"`']/g, (c) => SAFE_CH[c]) : v;
@@ -850,11 +856,27 @@ window.VF = (function () {
     };
     walk(st, 0); return st;
   };
+  // A world from another device must also hang together: anyone can write the demo world, and a station on an
+  // unknown map node or a driver without a vehicle used to crash pages for every visitor (QA R2-01). Returns false
+  // when the core lists are missing (don't use it at all); otherwise drops the records the app can't show.
+  VF.repairState = function (st) {
+    const arr = (k) => Array.isArray(st[k]);
+    if (!st || !['users', 'stations', 'operators', 'drivers', 'vehicles', 'sessions', 'bookings'].every(arr) || !st.operators.length) return false;
+    const ops = new Set(st.operators.filter((o) => o && o.pricing && Array.isArray(o.pricing.bands)).map((o) => o.id));
+    st.stations = st.stations.filter((s) => s && VF.PLACES[s.node] && ops.has(s.operatorId) && Array.isArray(s.connectors));
+    const sts = new Set(st.stations.map((x) => x.id));
+    st.sessions = st.sessions.filter((x) => x && sts.has(x.stationId)); st.bookings = st.bookings.filter((x) => x && sts.has(x.stationId));
+    const drivers = new Set(st.drivers.map((d) => d && d.id)); const withCar = new Set(st.vehicles.map((v) => v && v.driverId));
+    const orgs = new Set(((st.connect && st.connect.orgs) || []).map((o) => o.id));
+    st.users = st.users.filter((u) => u && (u.role !== 'driver' || (drivers.has(u.driverId) && withCar.has(u.driverId))) && (u.role !== 'operator' || ops.has(u.operatorId)) && (u.role !== 'developer' || !st.connect || orgs.has(u.orgId)));
+    st.vehicles = st.vehicles.filter((v) => v && (!v.node || VF.PLACES[v.node]));
+    return true;
+  };
   VF.load = function () {
     try { VF.session = JSON.parse(sessionStorage.getItem(SESSION_KEY)); } catch (e) { VF.session = null; }
     try {
       const raw = JSON.parse(localStorage.getItem(STORE_KEY));
-      if (raw && raw.state && raw.state.version === 2) { VF.state = VF.sanitizeState(raw.state); return true; }
+      if (raw && raw.state && raw.state.version === 2 && VF.repairState(VF.sanitizeState(raw.state))) { VF.state = raw.state; return true; }
     } catch (e) { /* storage unavailable */ }
     return false;
   };
@@ -862,7 +884,7 @@ window.VF = (function () {
   VF.adopt = function (json) {
     try {
       const raw = JSON.parse(json);
-      if (raw && raw.state && raw.state.version === 2 && (raw.state.rev || 0) > (VF.state.rev || 0)) { VF.state = VF.sanitizeState(raw.state); histCache = null; return true; }
+      if (raw && raw.state && raw.state.version === 2 && (raw.state.rev || 0) > (VF.state.rev || 0) && VF.repairState(VF.sanitizeState(raw.state))) { VF.state = raw.state; histCache = null; return true; }
     } catch (e) { /* ignore a half-written value */ }
     return false;
   };
@@ -966,7 +988,7 @@ window.VF = (function () {
   VF.mapSVG = function (o) {
     const vb = o.vb || [0, 0, MAP.W, MAP.H];
     const k = vb[2] / 1000; const fs = Math.max(11, Math.min(14, 13 * Math.sqrt(k))) ;
-    let s = `<svg class="map" ${o.id ? `id="${o.id}"` : ''} viewBox="${vb.join(' ')}" role="img" aria-label="${esc(o.label || 'Map of Greater Accra')}" style="--fs:${fs.toFixed(1)}px">` + mapBase();
+    let s = `<svg class="map" ${o.id ? `id="${o.id}"` : ''} viewBox="${vb.join(' ')}" role="group" aria-label="${esc(o.label || 'Map of Greater Accra')}" style="--fs:${fs.toFixed(1)}px">` + mapBase();
     if (o.route && o.route.length > 1) {
       const pts = o.route.map(([la, lo]) => proj(la, lo).map((n) => n.toFixed(1)).join(',')).join(' ');
       s += `<polyline class="route-line" points="${pts}"/>`;
@@ -1054,15 +1076,22 @@ window.VF = (function () {
     return `<svg class="chart" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" role="img" aria-label="Connector timeline">${s}</svg>`;
   };
 
-  return VF;
-
   // Clickjacking guard: refuse to run inside another site's frame (GitHub Pages can't send frame-ancestors headers).
+  // VF.framed stops the app from booting at all (app.js); this block only shows the way out. (QA R1-05: this used
+  // to sit after `return VF`, so it never ran.)
+  VF.framed = false;
   if (window.top !== window.self) {
-    let sameOrigin = false; try { sameOrigin = !!window.top.location.host; } catch (e) { sameOrigin = false; }
-    if (!sameOrigin) document.addEventListener('DOMContentLoaded', () => {
-      const d = document.createElement('div'); d.className = 'frame-guard';
-      d.innerHTML = '<p>For your security VoltFleet doesn’t run inside other websites.</p><a target="_blank" rel="noopener">Open VoltFleet</a>';
-      d.querySelector('a').href = location.href; document.body.appendChild(d);
-    });
+    let sameOrigin = false; try { sameOrigin = window.top.location.origin === location.origin; } catch (e) { sameOrigin = false; }
+    if (!sameOrigin) {
+      VF.framed = true;
+      const show = () => {
+        const d = document.createElement('div'); d.className = 'frame-guard';
+        d.innerHTML = '<p>For your security VoltFleet doesn’t run inside other websites.</p><a target="_blank" rel="noopener">Open VoltFleet</a>';
+        d.querySelector('a').href = location.origin + location.pathname; document.body.appendChild(d);
+      };
+      if (document.body) show(); else document.addEventListener('DOMContentLoaded', show);
+    }
   }
+
+  return VF;
 })();

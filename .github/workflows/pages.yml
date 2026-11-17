@@ -25,8 +25,14 @@ jobs:
       - uses: actions/configure-pages@v5
         with:
           enablement: true
+      # Publish only the app itself: docs, database migrations, Edge Functions and tools stay in the repository
+      # but are not served from the website (QA R2-08).
+      - name: Stage site files
+        run: |
+          mkdir _site
+          cp -r index.html styles.css sw.js manifest.webmanifest icon.svg .nojekyll icons img js _site/
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: .
+          path: _site
       - id: deployment
         uses: actions/deploy-pages@v4

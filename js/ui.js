@@ -57,7 +57,8 @@
       ${rows.map((r) => `<tr${o.rowAct ? ` class="clickable-row" data-act="${o.rowAct}" data-id="${esc(r.id)}"` : ''}>${cols.map((c) => `<td class="${c.align === 'r' ? 'r num' : ''} ${c.cls || ''}">${c.render ? c.render(r) : esc(r[c.key])}</td>`).join('')}</tr>`).join('')}
     </tbody></table></div>`;
   };
-  C.seg = (items, active, act, extra) => `<div class="seg" role="group">${items.map(([k, l, ic]) => `<button type="button" data-act="${act}" data-k="${k}" aria-pressed="${active === k}"${extra || ''}>${ic ? VF.icon(ic) : ''}<span>${esc(l)}</span></button>`).join('')}</div>`;
+  // Items are [key, label, icon, accessible name]: icon-only items (empty label) need the fourth value (QA R1-11).
+  C.seg = (items, active, act, extra) => `<div class="seg" role="group">${items.map(([k, l, ic, name]) => `<button type="button" data-act="${act}" data-k="${k}" aria-pressed="${active === k}"${name ? ` aria-label="${esc(name)}" data-tip="${esc(name)}"` : ''}${extra || ''}>${ic ? VF.icon(ic) : ''}<span>${esc(l)}</span></button>`).join('')}</div>`;
 
   // ---------------------------------------------------------------- battery
   C.battery = (soc, o) => {
@@ -159,7 +160,25 @@
 
   // ---------------------------------------------------------------- dialogs
   // Confirmation for destructive actions. Resolves true when confirmed.
-  let dialogResolve = null;
+  let dialogResolve = null, opener = null;
+  // While a dialog is open the page behind is inert, Tab stays inside it, Escape closes it, and focus goes back to
+  // whatever opened it (QA R1-13).
+  function openDialog(el) {
+    if (el.hidden) { const ae = document.activeElement; opener = ae && ae !== document.body && !el.contains(ae) ? ae : null; }
+    el.hidden = false;
+    const root = document.getElementById('root'); if (root) root.inert = true;
+  }
+  document.addEventListener('keydown', (e) => {
+    const el = document.getElementById('dialog'); if (!el || el.hidden) return;
+    if (e.key === 'Escape') { e.preventDefault(); VF.ACT['dlg-close'](); return; }
+    if (e.key !== 'Tab') return;
+    const items = [...el.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')].filter((x) => !x.disabled && x.offsetParent !== null && !x.closest('.dialog-backdrop'));
+    if (!items.length) return;
+    const first = items[0], last = items[items.length - 1];
+    if (!el.contains(document.activeElement)) { e.preventDefault(); first.focus(); }
+    else if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  });
   function dialogEl() {
     let el = document.getElementById('dialog');
     if (!el) { el = document.createElement('div'); el.id = 'dialog'; el.className = 'dialog-wrap'; el.hidden = true; document.body.appendChild(el); }
@@ -173,7 +192,7 @@
       <div class="dialog-icon ${o.danger ? 'bad' : 'teal'}">${VF.icon(o.icon || (o.danger ? 'triangle-alert' : 'info'))}</div>
       <h2 id="dlg-title">${esc(o.title)}</h2>${o.body ? `<p class="muted">${esc(o.body)}</p>` : ''}
       <div class="dialog-actions"><button class="btn" data-act="dlg-cancel">${esc(o.cancelLabel || 'Cancel')}</button><button class="btn ${o.danger ? 'danger-solid' : 'primary'}" data-act="dlg-ok" id="dlg-ok">${esc(o.confirmLabel || 'Confirm')}</button></div></div>`;
-    el.hidden = false;
+    openDialog(el);
     setTimeout(() => { const b = document.getElementById('dlg-ok'); if (b) b.focus(); }, 0);
   });
   // Form modal. onSubmit(form) returns an error string to keep it open, or nothing to close.
@@ -185,10 +204,15 @@
       ${o.sub ? `<p class="muted">${esc(o.sub)}</p>` : ''}
       <form id="dlg-form" class="dialog-form" novalidate>${o.body}<div class="form-error" id="dlg-error" hidden></div>
       <div class="dialog-actions"><button type="button" class="btn" data-act="dlg-close">Cancel</button><button type="submit" class="btn primary">${esc(o.submitLabel || 'Save')}</button></div></form></div>`;
-    el.hidden = false;
+    openDialog(el);
     setTimeout(() => { const f = el.querySelector('input, select, textarea'); if (f) f.focus(); }, 0);
   };
-  C.closeDialog = () => { const el = dialogEl(); el.hidden = true; el.innerHTML = ''; formHandler = null; };
+  C.closeDialog = () => {
+    const el = dialogEl(); const was = !el.hidden; el.hidden = true; el.innerHTML = ''; formHandler = null;
+    const root = document.getElementById('root'); if (root) root.inert = false;
+    if (was && opener && opener.isConnected) { try { opener.focus(); } catch (e) { /* gone */ } }
+    opener = null;
+  };
   function finish(ok) { const r = dialogResolve; dialogResolve = null; C.closeDialog(); if (r) r(ok); }
   Object.assign(VF.ACT, {
     'dlg-ok': () => finish(true),

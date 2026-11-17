@@ -63,7 +63,8 @@
   }
   VF.tickHooks = (VF.tickHooks || []).concat(gridTick);
   O.forceOutage = (depotId, minutes) => { const c = O.cfg(); const g = c.grid[depotId]; const now = VF.now(); c.gridT = now; Object.assign(g, { up: false, since: now, until: now + minutes * MIN, v: 0 }); g.log.unshift({ start: now, end: now + minutes * MIN }); const dep = VF.intel.cfg().depots[depotId]; VF.fleetNotice('warning', `Grid outage at ${depotName(depotId)}`, `Depot charging moved to backup power. ${dep.bessKwh ? `Battery ${dep.bessKwh} kWh. ` : ''}${dep.gensetKw ? `Generator ${dep.gensetKw} kW. ` : ''}Vehicles leaving first charge first.`); O.send('outage', { depot: depotName(depotId), time: VF.fmtTime(now + minutes * MIN) }, 'manager'); VF.intel.invalidate(); };
-  O.restore = (depotId) => { const g = O.cfg().grid[depotId]; g.until = VF.now() - 1; gridTick(); };
+  // Applies at once (it used to wait for the next simulation step, so the page still showed the outage).
+  O.restore = (depotId) => { const c = O.cfg(); const g = c.grid[depotId]; g.until = VF.now() - 1; c.gridT = Math.min(c.gridT || VF.now(), VF.now() - 1); gridTick(); };
 
   // ================================================================ alerts: SMS and WhatsApp, in the driver's language
   const LANGS = { en: 'English', tw: 'Twi (Akan)', ha: 'Hausa', fr: 'Français', ee: 'Ewe', ga: 'Ga' };
@@ -133,10 +134,10 @@
   const LKEY = 'voltfleet-os:lite';
   const L = VF.lite = {
     get() { try { const v = localStorage.getItem(LKEY); if (v) return v === 'on'; } catch (e) { /* none */ } return !!(navigator.connection && navigator.connection.saveData); },
-    set(on) { try { localStorage.setItem(LKEY, on ? 'on' : 'off'); } catch (e) { /* not kept */ } document.documentElement.toggleAttribute('data-lite', on); },
+    set(on) { try { localStorage.setItem(LKEY, on ? 'on' : 'off'); } catch (e) { /* not kept */ } document.documentElement.toggleAttribute('data-lite', on); if (VF.cloud && VF.cloud.liteChanged) VF.cloud.liteChanged(); },
     settingsCard() {
       const on = L.get(); const net = navigator.connection; const kind = net && net.effectiveType ? net.effectiveType.toUpperCase() : null;
-      return VF.c.card({ title: 'Low-data mode', sub: 'For 2G/3G, bundles and patchy coverage. The app keeps working offline and syncs when the network returns.' }, VF.c.seg([['off', 'Standard'], ['on', 'Low data', 'wifi-off']], on ? 'on' : 'off', 'lite-set') + `<ul class="why small"><li>${VF.icon('check')}<span>Turns off street-map tiles and animations; maps switch to the light schematic. Car photos stay: they come with the app.</span></li><li>${VF.icon('check')}<span>Everything you do is saved on this device first and synced later.</span></li><li>${VF.icon('check')}<span>Alerts still reach drivers by SMS when mobile data is off.</span></li></ul>${kind ? `<p class="small muted">Your connection: ${esc(kind)}${net.saveData ? ' · data saver on' : ''}.</p>` : ''}`);
+      return VF.c.card({ title: 'Low-data mode', sub: 'For 2G/3G, bundles and patchy coverage. The app keeps working offline and syncs when the network returns.' }, VF.c.seg([['off', 'Standard'], ['on', 'Low data', 'wifi-off']], on ? 'on' : 'off', 'lite-set') + `<ul class="why small"><li>${VF.icon('check')}<span>Turns off street-map tiles and animations; maps switch to the light schematic. Car photos stay: they come with the app.</span></li><li>${VF.icon('check')}<span>Shared data is checked every 45 seconds instead of streaming live, and this device never uploads the simulation. Your own changes are sent straight away, or kept on this device until the network is back.</span></li><li>${VF.icon('check')}<span>Alerts still reach drivers by SMS when mobile data is off.</span></li></ul>${kind ? `<p class="small muted">Your connection: ${esc(kind)}${net.saveData ? ' · data saver on' : ''}.</p>` : ''}`);
     },
   };
   L.set(L.get());

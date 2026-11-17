@@ -41,6 +41,12 @@
     return m.replace(/^error:\s*/i, '');
   }
   A.friendly = friendly;
+  function linkError(code) {
+    if (/otp_expired|expired/i.test(code)) return 'That link has expired or was already used. Request a new one.';
+    if (/access_denied/i.test(code)) return 'That sign-in link didn’t work. Request a new one.';
+    if (/email_not_confirmed/i.test(code)) return 'Confirm your email first: open the link we sent you, then sign in.';
+    return 'That sign-in link didn’t work. Request a new one.';
+  }
   async function rpc(fn, args) { const { data, error } = await sb.rpc(fn, args || {}); if (error) throw new Error(friendly(error)); return data; }
   A.rpc = rpc;
   const cacheAccount = (a) => { try { if (a) localStorage.setItem(ACCT_CACHE, JSON.stringify(a)); else localStorage.removeItem(ACCT_CACHE); } catch (e) { /* not kept */ } };
@@ -50,10 +56,13 @@
     // Is phone sign-in available? (public settings endpoint; cheap, never blocks sign-in)
     fetch(cfg.url.replace(/\/$/, '') + '/auth/v1/settings', { headers: { apikey: cfg.key } }).then((r) => r.json()).then((j) => { A.phone = !!(j && j.external && j.external.phone); if (VF.ui.login && document.querySelector('.auth')) VF.renderSignin(); }).catch(() => {});
     const q = new URLSearchParams(location.search);
-    const urlError = q.get('error_description') || q.get('error');
+    // Never show text from the URL (QA R1-15: anyone could put a message on the sign-in page). Known codes get a
+    // fixed message; anything else a generic one.
+    const urlError = q.get('error_description') || q.get('error') || q.get('error_code') ? linkError(q.get('error_code') || q.get('error') || '') : '';
     const { data } = await sb.auth.getSession(); // also completes a ?code= sign-in link (PKCE)
     if (q.has('code') || urlError) { history.replaceState(null, '', location.pathname + location.hash); }
-    if (urlError) VF.ui.login.error = friendly(urlError);
+    if (q.has('error') || q.has('error_code') || q.has('error_description')) history.replaceState(null, '', location.pathname + location.hash);
+    if (urlError) VF.ui.login.error = urlError;
     A.session = data && data.session;
     if (!A.session) { cacheAccount(null); return null; }
     try { A.account = await rpc('complete_signup'); cacheAccount(A.account); }
@@ -75,6 +84,8 @@
   A.next = async function (acct) {
     if (!acct) return 'signin';
     if (acct.status === 'unconfirmed') return 'check';
+    // An organisation invited this email: the person decides (QA R1-04). Never joined on their behalf.
+    if (acct.status === 'invited' && !acct.org) { L().invites = acct.pending_invites || []; return 'invite'; }
     if (acct.status === 'needs_onboarding' || !acct.org) return 'onboard';
     let lvl = null; try { const r = await sb.auth.mfa.getAuthenticatorAssuranceLevel(); lvl = r && r.data; } catch (e) { /* older session */ }
     if (lvl && lvl.nextLevel === 'aal2' && lvl.currentLevel !== 'aal2') return 'mfa';       // has an authenticator: use it
@@ -108,7 +119,18 @@
     VF.session = { userId, account: true };
     VF.saveLocal();
     // Whenever the team's saved workspace arrives, map this account to its own person in it again.
-    if (VF.cloud && VF.cloud.start) VF.cloud.start({ org: acct.org.id, onAdopt: () => { VF.session = { userId: personalise(VF.state, A.account), account: true }; } });
+    // Returns true when that changed the workspace, so the change is shared with the team.
+    if (VF.cloud && VF.cloud.start) VF.cloud.start({ org: acct.org.id, onAdopt: () => {
+      const mine = () => JSON.stringify([VF.state.members && VF.state.members[A.account.id], VF.session && VF.user(VF.session.userId)]);
+      const before = JSON.stringify([VF.state.members && VF.state.members[A.account.id], (VF.state.members && VF.state.members[A.account.id] && VF.user(VF.state.members[A.account.id])) || null]);
+      VF.session = { userId: personalise(VF.state, A.account), account: true };
+      return mine() !== before;
+    }, onGone: async () => {
+      // Removed from the team (or the organisation was deleted): don't keep showing, or holding, its data.
+      let acct = null; try { acct = await rpc('my_account'); } catch (e) { return; } // offline: try again later
+      if (acct && acct.org && acct.org.id === A.account.org.id) return;
+      VF.toast('You no longer have access to this workspace.'); setTimeout(() => A.signOut(false), 1200);
+    } });
   };
   function personalise(s, acct) {
     s.members = s.members || {};
@@ -163,7 +185,13 @@
         <details class="small muted"><summary>Lost your phone or authenticator?</summary><p>Ask your VoltFleet administrator to reset two-factor sign-in for your account after they’ve confirmed who you are. If you added a backup device, use that instead.</p></details>
         <button type="button" class="link-btn" data-act="auth-signout">${icon('log-out')}Sign out</button>`;
     else if (m === 'mfa-enroll') body = head('Protect your account', `${ui.staffNote === false ? 'Turn on two-factor sign-in.' : 'Staff accounts need two-factor sign-in: a password plus a code from an app on your phone.'}`) + (ui.enroll ? enrollBox(ui.enroll, 'auth-mfa-enroll') : `${err(ui)}<button type="button" class="btn" data-act="auth-enroll-retry">${icon('refresh-cw')}Try again</button>`) + `<button type="button" class="link-btn" data-act="auth-signout">${icon('log-out')}Sign out</button>`;
-    else if (m === 'recover') body = head('Choose a new password', 'At least 10 characters.') + `<form id="auth-recover" class="auth-form" novalidate>${field('New password', '<input class="input lg" name="password" type="password" autocomplete="new-password" minlength="10" required>')}${err(ui)}${btn('Save and continue')}</form>`;
+    else if (m === 'invite') {
+      const inv = ui.invites || [];
+      body = head('You’ve been invited', 'Joining shares your name and email with that organisation, and everything you add in its workspace is visible to its team. Only accept an invitation you expected.') +
+        `<ul class="plain-list invite-list">${inv.map((i) => `<li><div><strong>${esc(i.org_name || 'An organisation')}</strong><div class="small muted">${esc(ROLE_LABEL[i.role] || i.role)} · invited ${esc(new Date(i.invited_at).toLocaleDateString())} · expires ${esc(new Date(i.expires_at).toLocaleDateString())}</div></div>
+          <div class="row gap"><button type="button" class="btn primary small" data-act="auth-invite-accept" data-id="${esc(i.id)}" ${A.busy ? 'disabled' : ''}>Join</button><button type="button" class="btn small ghost" data-act="auth-invite-decline" data-id="${esc(i.id)}" ${A.busy ? 'disabled' : ''}>No thanks</button></div></li>`).join('')}</ul>
+        ${err(ui)}<p class="small muted">If you decline, we set up the account you chose when you signed up.</p><button type="button" class="link-btn" data-act="auth-signout">${icon('log-out')}Sign out</button>`;
+    } else if (m === 'recover') body = head('Choose a new password', 'At least 10 characters.') + `<form id="auth-recover" class="auth-form" novalidate>${field('New password', '<input class="input lg" name="password" type="password" autocomplete="new-password" minlength="10" required>')}${err(ui)}${btn('Save and continue')}</form>`;
     else if (m === 'signup' || m === 'onboard') {
       const type = ui.type || 'fleet'; const onboard = m === 'onboard';
       body = head(onboard ? 'Set up your account' : 'Create your account', onboard ? 'One last step: tell us how you use VoltFleet.' : 'Free while in beta. Your organisation’s data is private to your team.') + (onboard ? '' : tabs) + `<form id="${onboard ? 'auth-onboard' : 'auth-signup'}" class="auth-form" novalidate>
@@ -195,8 +223,8 @@
   const setOk = (m) => { L().ok = m; L().error = ''; A.busy = false; VF.renderSignin(); };
   const busy = () => { A.busy = true; L().error = ''; L().ok = ''; patch(); };
   const emailOk = (e) => /^[^@\s]{1,64}@[^@\s]{1,190}\.[a-z]{2,24}$/i.test(e);
-  async function afterSignIn() {
-    const acct = await rpc('complete_signup'); A.account = acct; cacheAccount(acct); A.busy = false;
+  async function afterSignIn(given) {
+    const acct = given && given.id ? given : await rpc('complete_signup'); A.account = acct; cacheAccount(acct); A.busy = false;
     const step = await A.next(acct);
     if (step === 'enter') { await A.enter(acct); L().error = ''; L().enroll = null; location.hash = ''; VF.routeChange(); return; }
     L().mode = step; if (acct.error) L().error = acct.error;
@@ -264,14 +292,27 @@
     } catch (e) { setErr(friendly(e)); }
   };
   document.addEventListener('submit', (e) => { const f = e.target; if (f && /^auth-/.test(f.getAttribute('id') || '')) { e.preventDefault(); if (!A.busy) A.submit(f); } });
+  // The account panel is one form whose submit saves the name. Enter in another section runs that section's action
+  // instead (QA R1-14: Enter in "New password" used to save the name and drop the password).
+  const ENTER_ACT = { 'acct-new-pass': 'acct-password', 'acct-invite-email': 'acct-invite' };
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' || !e.target || !e.target.closest) return;
+    const id = e.target.getAttribute('id'); let act = ENTER_ACT[id];
+    if (!act && e.target.closest('#acct-mfa-form')) act = 'acct-mfa-verify';
+    if (!act) return;
+    e.preventDefault(); e.stopPropagation(); if (VF.ACT[act]) VF.ACT[act](e.target, e);
+  }, true);
 
   Object.assign(VF.ACT, {
-    'auth-mode': (el) => { Object.assign(L(), { mode: el.dataset.k, error: '', ok: '', phoneSent: false }); VF.renderSignin(); },
+    'auth-mode': (el) => { Object.assign(L(), { mode: el.dataset.k, error: '', ok: '', phoneSent: false }); if (el.dataset.k === 'demo' && VF.startDemoSync) VF.startDemoSync(); VF.renderSignin(); },
     'auth-type': (el) => { const f = el.closest('form'); if (f) { const n = f.querySelector('[name="org"]'); if (n) L().org = n.value; const fn = f.querySelector('[name="fullname"]'); if (fn) L().fullname = fn.value; const em = f.querySelector('[name="email"]'); if (em) L().email = em.value; } L().type = el.dataset.k; VF.renderSignin(); },
     'auth-resend': async () => { const email = L().email; if (!email) return; const { error } = await sb.auth.resend({ type: 'signup', email, options: { emailRedirectTo: redirect() } }); if (error) setErr(friendly(error)); else setOk('Sent again. It can take a minute to arrive.'); },
     'auth-signout': () => A.signOut(false),
+    'auth-invite-accept': async (el) => { if (A.busy) return; A.busy = true; L().error = ''; VF.renderSignin(); try { await afterSignIn(await rpc('accept_invite', { p_id: el.dataset.id })); } catch (e) { A.busy = false; L().error = friendly(e); VF.renderSignin(); } },
+    'auth-invite-decline': async (el) => { if (A.busy) return; A.busy = true; L().error = ''; VF.renderSignin(); try { await afterSignIn(await rpc('decline_invite', { p_id: el.dataset.id })); } catch (e) { A.busy = false; L().error = friendly(e); VF.renderSignin(); } },
+    'acct-leave': async () => { if (!await VF.c.confirm({ title: 'Leave this organisation?', body: 'You lose access to its workspace straight away. Your login stays; you can join or create another organisation.', confirmLabel: 'Leave', danger: true })) return openAccount(); try { await rpc('leave_organization'); VF.toast('You left the organisation'); setTimeout(() => A.signOut(false), 600); } catch (e) { VF.toast(e.message); } },
     'auth-enroll-retry': async () => { await A.startEnroll(); VF.renderSignin(); },
-    'auth-copy-secret': (el) => { try { navigator.clipboard.writeText(el.dataset.secret); VF.toast('Key copied'); } catch (e) { VF.toast('Copy the key by hand'); } },
+    'auth-copy-secret': (el) => VF.copyText(el.dataset.secret, 'Key'), // waits for the clipboard; falls back, never claims a copy that failed (QA R1-14)
     'acct-mfa-add': async () => { try { A.acctEnroll = await newFactor(); } catch (e) { A.acctEnroll = null; return acctErr(friendly(e)); } openAccount(); },
     'acct-mfa-verify': async () => {
       const i = document.querySelector('#acct-mfa-form [name="code"]'); const code = i ? i.value.replace(/\s/g, '') : '';
@@ -302,6 +343,8 @@
   async function openAccount() {
     try { A.account = Object.assign({}, A.account, await rpc('my_account')); cacheAccount(A.account); } catch (e) { /* show cached */ }
     const a = A.account || {}; const admin = ['manager', 'operator', 'developer'].includes(a.role);
+    // Only the owner removes people, and nobody removes the owner (QA R1-06). Older servers don't report an owner.
+    const canRemove = a.owner === undefined ? admin : a.owner === true;
     let audit = [];
     if (admin) { const { data } = await sb.from('audit_log').select('action,detail,at').order('at', { ascending: false }).limit(8); audit = data || []; }
     let platform = null; if (a.role === 'admin') { try { platform = await rpc('admin_overview'); } catch (e) { /* not admin */ } }
@@ -318,11 +361,12 @@
         <section><h4>Security</h4>${field('New password', '<input class="input" id="acct-new-pass" type="password" autocomplete="new-password" minlength="10">')}<div class="row gap"><button type="button" class="btn small" data-act="acct-password">Change password</button><button type="button" class="btn small ghost" data-act="acct-signout-all">Sign out everywhere</button></div></section>
       </div>
       ${mfaHTML}
-      ${a.org ? `<section class="acct-team"><h4>Team · ${esc(a.org.name)}</h4><ul class="plain-list">${(a.members || []).map((m) => `<li><div><strong>${esc(m.full_name || 'Unnamed')}</strong>${m.you ? ' <span class="badge teal">You</span>' : ''}<div class="small muted">${esc(ROLE_LABEL[m.role] || m.role)}</div></div>${admin && !m.you ? `<button type="button" class="btn small ghost" data-act="acct-remove" data-id="${esc(m.id)}">Remove</button>` : ''}</li>`).join('')}</ul>
-        ${admin ? `<div class="row gap acct-invite"><input class="input" id="acct-invite-email" type="email" placeholder="colleague@company.com" aria-label="Email to invite"><button type="button" class="btn" data-act="acct-invite">${icon('user-plus')}Invite</button></div><p class="small muted">They join your workspace when they create a VoltFleet account with this email and confirm it.</p>
-        ${(a.invites || []).length ? `<ul class="plain-list">${a.invites.map((i) => `<li><div><strong>${esc(i.email)}</strong><div class="small muted">Invited · ${esc(ROLE_LABEL[i.role] || i.role)}</div></div><button type="button" class="btn small ghost" data-act="acct-revoke" data-id="${esc(i.id)}">Revoke</button></li>`).join('')}</ul>` : ''}` : ''}</section>` : ''}
+      ${a.org ? `<section class="acct-team"><h4>Team · ${esc(a.org.name)}</h4><ul class="plain-list">${(a.members || []).map((m) => `<li><div><strong>${esc(m.full_name || 'Unnamed')}</strong>${m.you ? ' <span class="badge teal">You</span>' : ''}<div class="small muted">${esc(ROLE_LABEL[m.role] || m.role)}${m.owner ? ' · Owner' : ''}</div></div>${canRemove && !m.you && !m.owner ? `<button type="button" class="btn small ghost" data-act="acct-remove" data-id="${esc(m.id)}">Remove</button>` : ''}</li>`).join('')}</ul>
+        ${admin ? `<div class="row gap acct-invite"><input class="input" id="acct-invite-email" type="email" placeholder="colleague@company.com" aria-label="Email to invite"><button type="button" class="btn" data-act="acct-invite">${icon('user-plus')}Invite</button></div><p class="small muted">When they sign in with this email they’re asked to accept. Invitations expire after 7 days.</p>
+        ${(a.invites || []).length ? `<ul class="plain-list">${a.invites.map((i) => `<li><div><strong>${esc(i.email)}</strong><div class="small muted">${i.declined ? 'Declined' : i.expired ? 'Expired' : 'Invited'} · ${esc(ROLE_LABEL[i.role] || i.role)}${i.expires_at && !i.expired && !i.declined ? ' · until ' + esc(new Date(i.expires_at).toLocaleDateString()) : ''}</div></div><button type="button" class="btn small ghost" data-act="acct-revoke" data-id="${esc(i.id)}">${i.declined || i.expired ? 'Remove' : 'Revoke'}</button></li>`).join('')}</ul>` : ''}` : ''}
+        ${a.owner === false ? `<button type="button" class="btn small ghost" data-act="acct-leave">${icon('log-out')}Leave organisation</button>` : ''}</section>` : ''}
       ${audit.length ? `<section><h4>Recent activity</h4><ul class="plain-list small">${audit.map((x) => `<li><span>${esc(x.action)}${x.detail && x.detail.email ? ' · ' + esc(x.detail.email) : ''}</span><span class="faint">${esc(new Date(x.at).toLocaleString())}</span></li>`).join('')}</ul></section>` : ''}
-      ${platform ? `<section><h4>Platform</h4><p class="small">${platform.accounts} accounts · ${platform.pending} unfinished sign-ups · ${platform.signups_7d} new this week · ${platform.staff_with_2fa != null ? platform.staff_with_2fa + ' staff with two-factor · ' : ''} ${Object.entries(platform.organisations || {}).map(([k, n]) => `${n} ${esc(k)}`).join(', ')}</p></section>` : ''}
+      ${platform ? `<section><h4>Platform</h4><p class="small">${esc(platform.accounts)} accounts · ${esc(platform.pending)} unfinished sign-ups · ${esc(platform.signups_7d)} new this week · ${platform.staff_with_2fa != null ? esc(platform.staff_with_2fa) + ' staff with two-factor · ' : ''} ${Object.entries(platform.organisations || {}).map(([k, n]) => `${n} ${esc(k)}`).join(', ')}</p></section>` : ''}
       <section class="acct-danger"><h4>Delete account</h4><p class="small muted">Erases your login and profile (your right to erasure). Workspaces with other members stay.</p><button type="button" class="btn small danger" data-act="acct-delete">${icon('trash-2')}Delete my account</button></section>
       <div class="form-error" id="acct-error" hidden>${icon('warn')}<span></span></div>`,
       onSubmit(d) { rpc('update_my_name', { p_name: d.fullname }).then((acct) => { A.account = Object.assign(A.account, acct); cacheAccount(A.account); personalise(VF.state, A.account); VF.save(); VF.toast('Name saved'); VF.rerender(); }).catch((e) => VF.toast(e.message)); return null; } });

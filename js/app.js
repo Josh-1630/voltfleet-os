@@ -225,6 +225,8 @@
     renderCrumbs(meta, title);
     VF.setHTML($('#tools'), app.tools ? app.tools() : '');
     VF.setHTML($('#actions'), app.actions ? app.actions(page) : '');
+    // Scrollable tables must be reachable by keyboard (QA R1-11)
+    for (const w of $$('#view .table-wrap')) if (!w.hasAttribute('tabindex') && (w.scrollWidth > w.clientWidth + 1 || w.scrollHeight > w.clientHeight + 1)) w.tabIndex = 0;
     if (current.role === 'driver') VF.renderSheet();
     renderNav();
     lastKey = app.structKey ? app.structKey(page) : page;
@@ -339,8 +341,12 @@
   }
   VF.renderSignin = () => { if (!role()) renderSignin(); };
   VF.routeChange = () => routeChange();
+  let demoSync = false;
+  VF.startDemoSync = () => { if (VF.mode !== 'demo' || demoSync) return; demoSync = true; if (VF.cloud && VF.cloud.start) VF.cloud.start(); };
   function signIn(userId) {
     const u = VF.user(userId); if (!u || u.deleted) return;
+    if (VF.mode !== 'demo') return; // demo accounts exist only in the demo world
+    VF.startDemoSync();
     VF.session = { userId };
     VF.audit(userId, 'sign-in', u.role);
     VF.save();
@@ -390,7 +396,7 @@
   }
   function onStorage(e) {
     if (e.key !== VF.STORE_KEY || !e.newValue) return;
-    if (VF.cloud && VF.cloud.online && VF.cloud.online()) return; // each tab gets updates from the server instead
+    if (VF.cloud && VF.cloud.active && VF.cloud.active()) return; // synced: each tab gets updates from the server instead
     if (!VF.adopt(e.newValue)) return;
     VF.ensureConnect(); VF.ensureFleet();
     if (!role()) { if (!current && $('.auth')) return; }
@@ -410,7 +416,7 @@
     if (document.hidden) return;
     if (leads()) {
       if (VF.tick(1000)) (VF.tickHooks || []).forEach((f) => f());
-      if (VF.cloud && VF.cloud.online && VF.cloud.online()) VF.cloud.saveTick(); else VF.save();
+      if (VF.cloud && VF.cloud.active && VF.cloud.active()) VF.cloud.saveTick(); else VF.save();
     }
     tickN++;
     if (!current) return;
@@ -429,6 +435,7 @@
 
   // ---------------------------------------------------------------- boot
   function boot() {
+    if (VF.framed) return; // inside another site's frame: never render or run (core.js shows a link out)
     if (!VF.load()) { VF.seed(); VF.session = null; }
     VF.ensureConnect(); VF.ensureFleet();
     document.addEventListener('click', (e) => {
@@ -456,7 +463,8 @@
     window.addEventListener('pagehide', () => { try { const l = JSON.parse(localStorage.getItem(LEADER_KEY) || 'null'); if (l && l.id === TAB_ID) localStorage.removeItem(LEADER_KEY); } catch (e) { /* ignore */ } });
     document.addEventListener('submit', (e) => { if (e.target.getAttribute('id') === 'login-form') { e.preventDefault(); signInByEmail(); } });
     window.addEventListener('resize', VF.debounce(drawCharts, 150));
-    const startDemo = () => { VF.mode = 'demo'; if (VF.cloud && VF.cloud.start) VF.cloud.start(); routeChange(); };
+    // The shared demo world only syncs once someone actually uses the demo, never behind the sign-in form (QA R1-01).
+    const startDemo = () => { VF.mode = 'demo'; routeChange(); if (VF.session || loginUi.mode === 'demo' || (!(VF.auth && VF.auth.enabled) && !loginUi.mode)) VF.startDemoSync(); };
     if (VF.auth && VF.auth.enabled) {
       $('#root').innerHTML = '<div class="boot-splash" role="status"><span class="spinner"></span><span>Opening VoltFleet…</span></div>';
       VF.auth.init().then(async (acct) => {

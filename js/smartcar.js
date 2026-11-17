@@ -109,10 +109,13 @@
   // Back from Smartcar Connect: ?user_id=…&state=… (or ?error=…)
   R.handleRedirect = async () => {
     const q = new URLSearchParams(location.search);
-    if (!q.has('user_id') && !q.has('error')) return false;
-    const state = q.get('state'); let expected = null; try { expected = sessionStorage.getItem(STATE); sessionStorage.removeItem(STATE); } catch (e) { /* none */ }
+    let pending = null; try { pending = sessionStorage.getItem(STATE); } catch (e) { /* none */ }
+    // Only a redirect from a Connect flow this tab started is ours: a sign-in link error (?error=…) is not (QA R2-05).
+    if (!q.has('user_id') && !(q.has('error') && q.has('state') && pending)) return false;
+    const state = q.get('state'); const expected = pending; try { sessionStorage.removeItem(STATE); } catch (e) { /* none */ }
     history.replaceState(null, '', location.pathname + '#m-vehicles');
-    if (q.has('error')) { VF.toast(q.get('error') === 'access_denied' ? 'Vehicle connection cancelled.' : `Smartcar: ${q.get('error_description') || q.get('error')}`); return true; }
+    // Fixed wording: text from the URL is never shown (anyone can craft the link).
+    if (q.has('error')) { VF.toast(q.get('error') === 'access_denied' ? 'Vehicle connection cancelled.' : 'Smartcar couldn’t connect the vehicle. Try again.'); return true; }
     if (!state || !expected || state !== expected) { VF.toast('That connection link did not come from this device. Try again.'); return true; }
     try {
       const res = await call('link', { userId: q.get('user_id'), state });

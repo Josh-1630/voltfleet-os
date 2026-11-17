@@ -12,8 +12,8 @@
   --line-strong: #CBD5E1;
   --ink: #1E293B;
   --ink-2: #334155;
-  --muted: #64748B;
-  --faint: #7C8A9E;
+  --muted: #5B6B7F; /* was #64748B: 4.34:1 on --surface-3 (QA R1-11) */
+  --faint: #5F6E82; /* 4.5:1 or better on every light surface (QA R1-11) */
   --accent: #0F766E;
   --accent-strong: #115E59;
   --accent-ink: #FFFFFF;
@@ -34,6 +34,7 @@
   --amber: #F59E0B;
   --bad: #DC2626;
   --bad-soft: #FEE2E2;
+  --bad-ink: #B91C1C; /* text on --bad-soft, 5.9:1 (QA R1-11) */
   --s2: #0891B2;
   --s3: #8B5CF6;
   --s4: #84CC16;
@@ -54,12 +55,12 @@
 }
 :root[data-theme="dark"] {
   --bg: #0A1316; --surface: #101C20; --surface-2: #13222A; --surface-3: #192A31; --line: #21353B; --line-strong: #2E474E;
-  --ink: #E6EEF0; --ink-2: #C5D3D6; --muted: #93A7AD; --faint: #71878E;
+  --ink: #E6EEF0; --ink-2: #C5D3D6; --muted: #93A7AD; --faint: #7E949A;
   --accent: #2DD4BF; --accent-strong: #5EEAD4; --accent-ink: #042F2E; --accent-soft: #0E2E2C;
   --mint: #5EEAD4; --mint-soft: #0F302D; --mint-ink: #5EEAD4;
   --lime: #A3E635; --lime-soft: #1C2A0D; --lime-ink: #BEF264;
   --charge: #2DD4BF; --charge-soft: #0F2B29; --ok: #22C55E; --ok-ink: #4ADE80; --ok-soft: #0F2A1B;
-  --warn: #FBBF24; --warn-soft: #33270F; --amber: #F59E0B; --bad: #F87171; --bad-soft: #3A1715;
+  --warn: #FBBF24; --warn-soft: #33270F; --amber: #F59E0B; --bad: #F87171; --bad-soft: #3A1715; --bad-ink: #F87171;
   --s2: #22D3EE; --s3: #A78BFA; --s4: #A3E635;
   --sea: #0B2329; --land: #0F1B1F; --road: #1E3036; --road-major: #2B434A;
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, .3); --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 14px 36px rgba(0, 0, 0, .4);
@@ -162,7 +163,7 @@ input[type="checkbox"] { accent-color: var(--accent); width: 17px; height: 17px;
 .pill.charge { background: var(--mint-soft); color: var(--mint-ink); }
 .pill.accent { background: var(--accent-soft); color: var(--accent); }
 .pill.warn { background: var(--warn-soft); color: var(--warn); }
-.pill.bad { background: var(--bad-soft); color: var(--bad); }
+.pill.bad { background: var(--bad-soft); color: var(--bad-ink, var(--bad)); }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip { display: inline-flex; align-items: center; gap: 5px; border-radius: 99px; height: 26px; padding: 0 11px; font-size: 12.5px; border: 1px solid var(--line); color: var(--muted); background: var(--surface-2); }
 .chip svg { width: 13px; height: 13px; }
@@ -1873,3 +1874,9 @@ td .select { min-width: 160px; }
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; }
 }
+
+/* QA R1-11: links inside running text are underlined, not told apart by colour alone */
+p a:not(.btn):not(.link-btn), td a:not(.btn), dd a:not(.btn), .sub a:not(.btn), .muted a:not(.btn):not(.link-btn), .small a:not(.btn):not(.link-btn):not(.nav-link) { text-decoration: underline; text-underline-offset: 2px; }
+/* QA R1-04: invitation consent screen */
+.invite-list li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.invite-list li:last-child { border-bottom: 0; }

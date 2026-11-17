@@ -197,8 +197,10 @@ export async function handle(req: Request, d: Deps): Promise<Response> {
         if (!st) throw new HttpError(403, 'This connection link has expired or was already used. Connect the vehicle again.');
         const conns = await connectionsOf(d, body.userId);
         if (!conns.length) throw new HttpError(404, 'Smartcar has no vehicle connected for this user.');
-        // When Smartcar reports when a connection was made, it must be after this Connect flow started.
-        if (conns.every((c) => c.createdAt != null) && !conns.some((c) => (c.createdAt as number) >= st.createdAt - 5 * 60_000)) throw new HttpError(403, 'These vehicles were not connected in this session.');
+        // The user id comes from the browser, so it only counts if Smartcar says one of its connections was made
+        // during this Connect flow. Without a timestamp we can't tell, so we refuse (QA R1-10: this used to pass).
+        if (!conns.some((c) => c.createdAt != null)) throw new HttpError(403, 'Smartcar didn’t say when these vehicles were connected, so we can’t confirm this connection. Connect the vehicle again.');
+        if (!conns.some((c) => c.createdAt != null && (c.createdAt as number) >= st.createdAt - 5 * 60_000)) throw new HttpError(403, 'These vehicles were not connected in this session.');
         const key = randomToken(32);
         await d.store.addLink(await sha256(key), body.userId);
         return reply(200, { key, vehicles: await readVehicles(d, body.userId, true) });

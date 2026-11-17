@@ -71,7 +71,7 @@
         ${C.card({ cls: 'span-8 flush', title: 'Leaderboard', sub: 'Eco-score combines efficiency, braking, speed, regeneration, idling and charging habits', action: `<button class="btn small" data-act="o-sc-all">${icon('send')}Send to all drivers</button>` }, C.table([
           { label: '#', render: (r) => `<span class="sq-rank">${rows.indexOf(r) + 1}</span>` },
           { label: 'Driver', render: (r) => `<strong>${esc(r.d.name)}</strong><div class="small muted">${esc(r.v ? r.v.name : 'No vehicle')}</div>` },
-          { label: 'Eco-score', render: (r) => `<div class="score"><div class="progress sm"><i class="${r.eco >= 80 ? 'ok' : r.eco >= 60 ? '' : 'warn'}" style="width:${r.eco}%"></i></div><span class="num"><strong>${r.eco}</strong></span></div>` },
+          { label: 'Eco-score', render: (r) => `<div class="score"><div class="progress sm"><i class="${r.eco >= 80 ? 'ok' : r.eco >= 60 ? '' : 'warn'}" style="width:${clamp(+r.eco || 0, 0, 100)}%"></i></div><span class="num"><strong>${esc(r.eco)}</strong></span></div>` },
           { label: 'Week', align: 'r', render: (r) => `<span class="${r.change >= 0 ? 'text-ok' : 'text-warn'}">${r.change >= 0 ? '+' : ''}${r.change}</span>` },
           { label: 'vs rated', align: 'r', render: (r) => `${r.cur.m.eff >= 1 ? '+' : '−'}${fmt.n(Math.abs(r.cur.m.eff - 1) * 100)}%` },
           { label: 'Harsh /100 km', align: 'r', render: (r) => fmt.n(r.cur.m.harsh, 1) },

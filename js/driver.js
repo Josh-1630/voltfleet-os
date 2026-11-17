@@ -94,7 +94,7 @@
       return card(`${span} charge-card is-charging`, 'Charging now', VF.pill('charge', 'Live'), `
         <div class="charge-place"><strong>${esc(st.name)}</strong><span class="muted small">Connector ${esc(c.label)} · ${esc(c.type)} ${c.kw} kW</span></div>
         <div class="chg-flow" aria-hidden="true"><span class="cf-node">${icon('plug')}</span><span class="cf-line"><i></i><i></i><i></i><i></i><i></i></span><span class="cf-node car">${icon('car')}</span></div>
-        <div class="progress lg"><i class="charge" data-live="chgw" style="width:${clamp(v.soc, 0, 100)}%"></i><b style="left:${b.targetSoc}%" title="Target ${b.targetSoc}%"></b></div>
+        <div class="progress lg"><i class="charge" data-live="chgw" style="width:${clamp(v.soc, 0, 100)}%"></i><b style="left:${clamp(+b.targetSoc || 0, 0, 100)}%" title="Target ${esc(b.targetSoc)}%"></b></div>
         <div class="stats-4">${stat('Power', '—', 'chgkw')}${stat('Added', '—', 'chgkwh')}${stat('Cost so far', '—', 'chgcost')}${stat(`To ${b.targetSoc}%`, '—', 'chgleft')}</div>
         <div class="card-actions"><button class="btn" data-act="d-stop">Stop charging</button><span class="faint small">Booking ${esc(b.code)}</span></div>`);
     }

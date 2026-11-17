@@ -16,7 +16,7 @@
 | 2 | Anyone could write unlimited worlds or flood the shared world | High | **Fixed (limited)**; full fix needs sign-in (see A) |
 | 3 | No Content Security Policy; an inline event handler | Medium | **Fixed** |
 | 4 | Spreadsheet formula injection in CSV exports | Medium | **Fixed** |
-| 5 | Clickjacking (the app could be framed by another site) | Medium | **Fixed** (frame guard) |
+| 5 | Clickjacking (the app could be framed by another site) | Medium | **Fixed** (frame guard; it only took effect in QA round 2, see `docs/qa/round-2.md` R1-05) |
 | 6 | Smartcar sign-in accepted a missing `state` check | Low | **Fixed** |
 | 7 | Links from the Wikipedia API not restricted to https | Low | **Fixed** |
 | 8 | Prototype pollution from tampered saved data | Low | **Fixed** |

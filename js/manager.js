@@ -98,7 +98,7 @@
     if (z.dots) return `<div class="dots-tile" data-live="kpi-${i}-dots">${dotsHTML(z.dots)}</div>`;
     return '';
   }
-  const segHTML = (seg, t) => seg.filter((x) => x[1]).map(([tone, n]) => `<i class="${tone}" style="flex:${n}" title="${n}"></i>`).join('');
+  const segHTML = (seg, t) => seg.filter((x) => x[1]).map(([tone, n]) => `<i class="${tone}" style="flex:${+n || 0}" title="${esc(n)}"></i>`).join('');
   const dotsHTML = (dots) => dots.map((on) => `<i class="${on ? 'on' : ''}"></i>`).join('');
   function kpis() {
     return kpiData().map((k, i) => `<div class="stat-card kpi ${k.tone || ''}" style="--i:${i}">
@@ -230,7 +230,7 @@
             <a class="qa" href="#m-trips">${icon('route')}<span>Plan a journey</span></a>
             <a class="qa" href="#m-reports">${icon('file-text')}<span>View reports</span></a>
           </div>`)}
-          ${C.card({ title: 'Needs attention', action: att.length ? `<span class="badge warn">${att.length}</span>` : '' }, att.length ? `<ul class="att-list">${att.slice(0, 5).map(([ic, tone, title, sub, id]) => `<li data-act="m-open-vehicle" data-id="${id}" role="button" tabindex="0"><span class="att-ic ${tone}">${icon(ic)}</span><div><strong>${esc(title)}</strong><span class="small muted">${esc(sub)}</span></div>${icon('chevron-right', 'chev')}</li>`).join('')}</ul>` : C.empty({ icon: 'circle-check', title: 'All clear', text: 'No vehicle needs attention right now.' }))}
+          ${C.card({ title: 'Needs attention', action: att.length ? `<span class="badge warn">${att.length}</span>` : '' }, att.length ? `<ul class="att-list" role="none">${att.slice(0, 5).map(([ic, tone, title, sub, id]) => `<li data-act="m-open-vehicle" data-id="${id}" role="button" tabindex="0"><span class="att-ic ${tone}">${icon(ic)}</span><div><strong>${esc(title)}</strong><span class="small muted">${esc(sub)}</span></div>${icon('chevron-right', 'chev')}</li>`).join('')}</ul>` : C.empty({ icon: 'circle-check', title: 'All clear', text: 'No vehicle needs attention right now.' }))}
         </div>
         ${C.card({ cls: 'span-8', title: 'Vehicle locations', sub: 'Live positions and nearby charging stations', action: mapLegend() }, `<div class="map-wrap">${VF.mgr.fleetMap('m-dash-map')}</div>${VF.mgr.mapNote()}`)}
         ${C.card({ cls: 'span-4 wide-md', title: 'Fleet status' }, `<div data-live="m-donut">${statusDonut()}</div>`)}
@@ -282,7 +282,7 @@
     return `${VF.real.banner()}<div class="toolbar">
         <div class="search-field">${icon('search')}<input class="input" type="search" id="m-vq" data-inp="m-vq" placeholder="Search name, model, plate or driver" value="${esc(ui.vq)}" aria-label="Search vehicles"></div>
         <div class="seg" role="group" aria-label="Status">${VFILTERS.map(([k, l]) => `<button type="button" data-act="m-vfilter" data-k="${k}" aria-pressed="${ui.vfilter === k}">${l}<span class="n">${cnt(k)}</span></button>`).join('')}</div>
-        <div class="toolbar-end">${C.seg([['grid', '', 'layout-grid'], ['table', '', 'list']], ui.vview, 'm-vview', ' data-tip-pos="b"')}</div>
+        <div class="toolbar-end">${C.seg([['grid', '', 'layout-grid', 'Show as cards'], ['table', '', 'list', 'Show as table']], ui.vview, 'm-vview', ' data-tip-pos="b"')}</div>
       </div>
       ${!list.length ? C.card({}, C.empty({ icon: 'car-front', title: 'No vehicles match', text: 'Try another status or clear the search.', action: `<button class="btn" data-act="m-vclear">Clear filters</button>` }))
         : ui.vview === 'grid' ? `<div class="vgrid">${list.map(vehicleCard).join('')}</div>`
