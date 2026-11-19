@@ -395,13 +395,21 @@
     'al-resolve': (el) => { const a = VF.state.alerts.find((x) => x.id === el.dataset.id); if (a) { a.resolved = true; a.acked = true; VF.save(); VF.rerender(); } },
   });
   Object.assign(VF.CHG, {
-    'op-price': (el) => { const v = Number(el.value); if (!isNaN(v) && v >= 0) { op().pricing[el.dataset.k] = v; VF.audit(me().id, 'pricing-change', `${el.dataset.k} = ${v}`); VF.save(); VF.toast('Saved'); } },
+    // QA R3-08: an emptied field used to save 0 (Number('') is 0): free charging for everyone at the operator's sites.
+    'op-price': (el) => {
+      const raw = String(el.value).trim(); const v = raw === '' ? NaN : Number(raw);
+      if (!Object.prototype.hasOwnProperty.call(op().pricing, el.dataset.k) || typeof op().pricing[el.dataset.k] !== 'number') return;
+      if (!Number.isFinite(v) || v < 0 || v > 1000) { VF.toast('Enter a price from 0 to 1000'); VF.rerender(); return; }
+      op().pricing[el.dataset.k] = v; VF.audit(me().id, 'pricing-change', `${el.dataset.k} = ${v}`); VF.save(); VF.toast('Saved');
+    },
     'op-band': (el) => {
       const b = op().pricing.bands[+el.dataset.i]; const k = el.dataset.k;
-      if (k === 'name') b.name = el.value.trim() || b.name; else { const v = Number(el.value); if (!isNaN(v)) b[k] = k === 'price' ? Math.max(0, v) : clamp(Math.round(v), 0, 24); }
+      if (!b) return;
+      if (k === 'name') b.name = el.value.replace(/[\u0000-\u001f<>]/g, ' ').trim().slice(0, 40) || b.name;
+      else { const raw = String(el.value).trim(); const v = raw === '' ? NaN : Number(raw); if (!Number.isFinite(v)) { VF.rerender(); return; } b[k] = k === 'price' ? clamp(v, 0, 1000) : clamp(Math.round(v), 0, 24); }
       VF.audit(me().id, 'pricing-change', `band ${+el.dataset.i + 1} ${k}`); VF.save(); VF.rerender();
     },
-    'op-cap': (el) => { const st = VF.station(el.dataset.id); const v = Number(el.value); if (mine(st.id) && v >= 10) { st.capKw = v; VF.save(); VF.toast(`${st.name} limit set to ${v} kW`); } },
+    'op-cap': (el) => { const st = VF.station(el.dataset.id); const v = Number(el.value); if (st && mine(st.id) && Number.isFinite(v) && v >= 10 && v <= 10000) { st.capKw = v; VF.save(); VF.toast(`${st.name} limit set to ${v} kW`); } else { VF.toast('Enter a limit from 10 to 10,000 kW'); VF.rerender(); } },
     'op-lb': (el) => { const st = VF.station(el.dataset.id); if (mine(st.id)) { st.lb = el.value; VF.save(); VF.toast('Saved'); } },
     'op-logst': (el) => { ui.logStation = el.value; VF.rerender(); },
   });

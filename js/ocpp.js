@@ -20,7 +20,9 @@
 
   async function call(action, body) {
     if (!FN) throw new Error('Cloud functions are not configured (js/config.js).');
-    const r = await fetch(FN, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(cloud.key ? { apikey: cloud.key } : {}) }, body: JSON.stringify({ action, ...(body || {}) }) });
+    // Signed in: say who is asking, only for the action with a per-person limit (QA R1-08). The demo stays anonymous.
+    const who = action === 'createNetwork' && VF.auth && VF.auth.bearer ? VF.auth.bearer() : null;
+    const r = await fetch(FN, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(cloud.key ? { apikey: cloud.key } : {}), ...(who ? { Authorization: who } : {}) }, body: JSON.stringify({ action, ...(body || {}) }) });
     let j = null; try { j = await r.json(); } catch (e) { /* not JSON */ }
     if (!r.ok) { const err = new Error((j && j.error) || `Request failed (${r.status})`); err.status = r.status; throw err; }
     return j;
@@ -47,6 +49,13 @@
   const kwh = (wh) => (wh == null ? '—' : fmt.kwh(wh / 1000));
   const ago = (ms) => { if (!ms) return 'never'; const s = Math.max(0, (Date.now() - ms) / 1000); return s < 10 ? 'just now' : s < 60 ? `${Math.round(s)} s ago` : s < 3600 ? `${Math.round(s / 60)} min ago` : s < 86400 ? `${Math.round(s / 3600)} h ago` : `${Math.round(s / 86400)} d ago`; };
   const tag = (t) => (t && t.length > 4 ? t.slice(0, 2) + '•••' + t.slice(-2) : t || '—'); // card numbers are personal data: masked
+  // The raw message log shows card numbers too (Authorize, StartTransaction, RemoteStart…): mask them there as well.
+  const maskTags = (v, depth) => {
+    if ((depth || 0) > 6 || v === null || typeof v !== 'object') return v;
+    if (Array.isArray(v)) return v.map((x) => maskTags(x, (depth || 0) + 1));
+    const o = {}; for (const k of Object.keys(v)) o[k] = /^(parentIdTag|idTag)$/.test(k) && typeof v[k] === 'string' ? tag(v[k]) : maskTags(v[k], (depth || 0) + 1);
+    return o;
+  };
   const time = (ms) => new Date(ms).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   const activeTx = (cpId, n) => (O.data ? O.data.transactions.find((t) => t.cpId === cpId && t.connectorId === n && !t.stopAt) : null);
 
@@ -98,7 +107,7 @@
   function logHTML() {
     const list = (O.data && O.data.log) || [];
     if (!list.length) return C.empty({ icon: 'radio-tower', title: 'No messages yet', text: 'Every OCPP message between your chargers and VoltFleet is listed here.' });
-    return `<div class="log oc-log">${list.slice(0, 60).map((l) => `<div class="log-row"><span class="t">${time(l.at)}</span><span class="dir ${l.dir === 'out' ? 'out' : 'in'}">${l.dir === 'out' ? '→ CP' : '← CP'}</span><span class="msg"><strong>${esc(l.action || l.kind)}</strong> <span class="faint small">${esc(l.kind)} · ${esc(l.cpId)}</span><span class="small muted oc-payload">${esc(JSON.stringify(l.payload || {})).slice(0, 180)}</span></span></div>`).join('')}</div>`;
+    return `<div class="log oc-log">${list.slice(0, 60).map((l) => `<div class="log-row"><span class="t">${time(l.at)}</span><span class="dir ${l.dir === 'out' ? 'out' : 'in'}">${l.dir === 'out' ? '→ CP' : '← CP'}</span><span class="msg"><strong>${esc(l.action || l.kind)}</strong> <span class="faint small">${esc(l.kind)} · ${esc(l.cpId)}</span><span class="small muted oc-payload">${esc(JSON.stringify(maskTags(l.payload || {})).slice(0, 180))}</span></span></div>`).join('')}</div>`;
   }
   function simHTML() {
     const cps = (O.data && O.data.chargePoints) || [];

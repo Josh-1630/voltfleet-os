@@ -107,6 +107,10 @@
 
   // ---------------------------------------------------------------- per-target state
   let sb = null, gen = 0, target = null, channel = null, pollTimer = null;
+  // QA R1-09: subscribe to the small head row (revision, lease holder) instead of the full snapshot, and download the
+  // snapshot only when the revision is new to this device. null: not checked yet; false: the server doesn't have the
+  // head tables (migration 20261117_world_heads.sql not applied), so the full row is streamed as before.
+  let heads = null;
   let base = null;      // { rev, json }: the last world confirmed by the server (rev null: not confirmed yet)
   let pending = [];     // patches of this device's actions the server hasn't confirmed yet
   let lastJSON = null;  // the world as of the last sync point, to isolate what one action changed
@@ -116,10 +120,10 @@
   const T = () => {
     const org = target && target.org;
     return org
-      ? { key: 'org:' + org, table: 'org_worlds', col: 'org_id', id: org,
+      ? { key: 'org:' + org, table: 'org_worlds', heads: 'org_world_heads', col: 'org_id', id: org,
         tick: (c, e, s) => sb.rpc('org_world_tick', { p_client: c, p_expected: e, p_state: s }),
         push: (s, e) => sb.rpc('org_world_push', e === undefined ? { p_state: s } : { p_state: s, p_expected: e }) }
-      : { key: 'world:' + WORLD, table: 'worlds', col: 'id', id: WORLD,
+      : { key: 'world:' + WORLD, table: 'worlds', heads: 'world_heads', col: 'id', id: WORLD,
         tick: (c, e, s) => sb.rpc('world_tick', { p_id: WORLD, p_client: c, p_expected: e, p_state: s }),
         push: (s, e) => sb.rpc('world_push', e === undefined ? { p_id: WORLD, p_state: s } : { p_id: WORLD, p_state: s, p_expected: e }) };
   };
@@ -277,9 +281,13 @@
   function subscribe(g) {
     unsubscribe();
     if (g !== gen || lite() || document.hidden) return; // hidden tabs and low-data mode poll instead of streaming
-    const t = T();
+    const t = T(); const small = heads === true;
     channel = sb.channel('world-' + t.id + '-' + g)
-      .on('postgres_changes', { event: '*', schema: 'public', table: t.table, filter: `${t.col}=eq.${t.id}` }, (p) => { if (g === gen && p && p.new) queue((g2) => adopt(g2, t, p.new, false)); })
+      .on('postgres_changes', { event: '*', schema: 'public', table: small ? t.heads : t.table, filter: `${t.col}=eq.${t.id}` }, (p) => {
+        if (g !== gen || !p || !p.new) return;
+        // Head events carry no snapshot: adopt() fetches it, and only if the revision is newer than ours.
+        queue((g2) => adopt(g2, t, small ? Object.assign({}, p.new, { state_gz: null }) : p.new, false));
+      })
       .subscribe((s) => { if (g !== gen) return; if (s === 'SUBSCRIBED') { if (cloud.status !== 'error') setStatus('live'); } else if (s === 'CHANNEL_ERROR' || s === 'TIMED_OUT') setStatus('live-poll'); });
   }
   function unsubscribe() { if (channel) { const ch = channel; channel = null; try { if (sb && sb.removeChannel) sb.removeChannel(ch); else if (ch.unsubscribe) ch.unsubscribe(); } catch (e) { /* gone */ } } }
@@ -316,6 +324,8 @@
     const t = T();
     try {
       sb = VF.sb || sb || window.supabase.createClient(cfg.url, cfg.key, { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } });
+      if (heads === null) { try { const h = await sb.from(t.heads).select('rev').eq(t.col, t.id).maybeSingle(); heads = !(h && h.error) ? true : /42P01|PGRST205|does not exist|schema cache/i.test((h.error.code || '') + ' ' + (h.error.message || '')) ? false : null; } catch (e) { heads = null; } }
+      if (g !== gen) return;
       const row = await fetchRow(t, 'rev,state_gz,leader_id');
       if (g !== gen) return;
       if (row && row.state_gz) await queue((g2) => adopt(g2, t, row, true));

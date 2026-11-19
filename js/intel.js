@@ -31,6 +31,8 @@
     c.depots = c.depots || {};
     for (const d of f.depots) c.depots[d.id] = Object.assign({}, DEPOT_DEFAULTS[d.id] || OTHER_DEPOT, c.depots[d.id]);
     c.v2g = Object.assign({ on: true, scenario: 'fleet', floor: 40, exportPrice: 3.4, wear: 0.32, maxKw: 11, optOut: [] }, c.v2g);
+    // A missing or non-numeric floor used to turn vehicles' charge into NaN during a grid event (QA R3-09).
+    c.v2g.floor = clamp(Number.isFinite(+c.v2g.floor) ? +c.v2g.floor : 40, 30, 90);
     c.workOrders = c.workOrders || []; c.fixed = c.fixed || {};
     c.factors = Object.assign({ traffic: true, weather: true, terrain: true, cargo: true, ageing: true }, c.factors);
     return c;

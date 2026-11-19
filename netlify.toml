@@ -1,6 +1,17 @@
+# Optional host. If the site is served from Netlify (or Cloudflare Pages with the same rules), it publishes only the
+# app files, like .github/workflows/pages.yml, and sends the security headers GitHub Pages can't (security review G).
 [build]
-  publish = "."
+  command = "rm -rf _site && mkdir _site && cp -r index.html styles.css sw.js manifest.webmanifest icon.svg .nojekyll icons img js fonts _site/"
+  publish = "_site"
 [[headers]]
   for = "/sw.js"
   [headers.values]
     Cache-Control = "no-cache"
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Content-Security-Policy = "frame-ancestors 'none'"
+    Strict-Transport-Security = "max-age=31536000; includeSubDomains"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "geolocation=(), camera=(), microphone=(), payment=(), usb=(), interest-cohort=()"

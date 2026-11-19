@@ -3,7 +3,7 @@
 // chargers authenticate with their own password). The same code runs on any long-lived Deno host:
 //   SUPABASE_DB_URL=postgres://... deno run -A supabase/functions/ocpp/index.ts
 import postgres from 'npm:postgres@3.4.5';
-import { handleRequest, type ApiStore } from './server.ts';
+import { handleRequest, sessionUser, type ApiStore } from './server.ts';
 
 const sql = postgres(Deno.env.get('SUPABASE_DB_URL')!, { prepare: false, max: 4, idle_timeout: 20 });
 const t = (x: Date | string | null | undefined) => (x ? new Date(x).getTime() : null);
@@ -49,8 +49,20 @@ const store: ApiStore = {
     await sql`insert into private.ocpp_log (cp_id, dir, kind, action, payload) values (${cpId}, ${dir}, ${kind}, ${action}, ${sql.json(body as any)})`;
     if (++logCount % 200 === 0) await sql`delete from private.ocpp_log where at < now() - interval '7 days'`; // keep a week
   },
-  async createNetwork(keyHash, name) { const [r] = await sql`insert into private.ocpp_networks (key_hash, name) values (${keyHash}, ${name}) returning id`; return r.id; },
-  async countNetworksSince(ms) { const [r] = await sql`select count(*)::int as n from private.ocpp_networks where created_at >= ${d(ms)}`; return r.n; },
+  // created_by comes with migration 20261117_edge_limits.sql; until it is applied, fall back to the old behaviour.
+  async createNetwork(keyHash, name, createdBy) {
+    try { const [r] = await sql`insert into private.ocpp_networks (key_hash, name, created_by) values (${keyHash}, ${name}, ${createdBy ?? null}) returning id`; return r.id; }
+    catch (e) { if ((e as any)?.code !== '42703') throw e; const [r] = await sql`insert into private.ocpp_networks (key_hash, name) values (${keyHash}, ${name}) returning id`; return r.id; }
+  },
+  async countNetworksSince(ms, who) {
+    if (!who) { const [r] = await sql`select count(*)::int as n from private.ocpp_networks where created_at >= ${d(ms)}`; return r.n; }
+    try {
+      const [r] = who === 'anon'
+        ? await sql`select count(*)::int as n from private.ocpp_networks where created_at >= ${d(ms)} and created_by is null`
+        : await sql`select count(*)::int as n from private.ocpp_networks where created_at >= ${d(ms)} and created_by = ${who}`;
+      return r.n;
+    } catch (e) { if ((e as any)?.code === '42703') return null; throw e; }
+  },
   async networkByKey(h) { const [r] = await sql`select id, name from private.ocpp_networks where key_hash = ${h}`; return r ? { id: r.id, name: r.name } : null; },
   async addChargePoint(cp) { await sql`insert into private.ocpp_charge_points (id, network_id, label, password_hash, auth_mode) values (${cp.id}, ${cp.networkId}, ${cp.label}, ${cp.passwordHash}, ${cp.authMode})`; },
   async countChargePoints(net) { const [r] = await sql`select count(*)::int as n from private.ocpp_charge_points where network_id = ${net}`; return r.n; },
@@ -77,4 +89,5 @@ Deno.serve((req) => handleRequest(req, {
   upgrade: (r, protocol) => Deno.upgradeWebSocket(r, protocol ? { protocol } : {}) as any,
   keepAlive: ER && ER.waitUntil ? (p) => ER.waitUntil(p) : undefined,
   maxConnectionMs: ER ? MAX_MS : 0,
+  user: (r) => sessionUser(r, fetch, (k) => Deno.env.get(k)),
 }));

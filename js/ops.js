@@ -96,9 +96,12 @@
   O.render = (type, lang, vars) => { const t = T[type] || {}; const txt = t[lang] || t.en || ''; return txt.replace(/\{(\w+)\}/g, (_, k) => (vars && vars[k] != null ? vars[k] : '')); };
   const mask = (phone) => { const d = String(phone || '').replace(/\D/g, ''); return d.length > 6 ? `+${d.slice(0, 3)} ${d.slice(3, 5)} *** ${d.slice(-4)}` : '—'; };
   const SMS_COST = 0.035, WA_COST = 0.18; // GHS per SMS segment / per WhatsApp utility message (estimates)
+  // Quiet hours, whether or not the window crosses midnight (21:00–06:00, or 13:00–15:00).
+  const inQuiet = (q, h) => !!(q && q.on && q.from !== q.to && (q.from > q.to ? h >= q.from || h < q.to : h >= q.from && h < q.to));
+  O.inQuiet = inQuiet;
   O.send = (type, vars, audience, driverId) => {
     const c = O.cfg(); const rule = c.rules[type]; if (!rule) return;
-    const now = VF.now(); const h = VF.hourOf(now); const quiet = c.quiet.on && !rule.crit && (c.quiet.from > c.quiet.to ? h >= c.quiet.from || h < c.quiet.to : h >= c.quiet.from && h < c.quiet.to);
+    const now = VF.now(); const h = VF.hourOf(now); const quiet = !rule.crit && inQuiet(c.quiet, h);
     const recipients = [];
     if ((rule.to === 'driver' || audience === 'driver') && driverId) { const d = VF.fleetDriver(driverId); if (d) recipients.push({ who: d.name, role: 'Driver', phone: d.phone, lang: O.langOf(d.id) }); }
     if (rule.to === 'manager' || audience === 'manager') { const u = VF.user('u-fm1') || {}; recipients.push({ who: u.name || 'Fleet manager', role: 'Manager', phone: u.phone, lang: 'en' }); }
@@ -128,7 +131,8 @@
   }
   VF.tickHooks.push(noticeTick);
   // Releases queued messages after quiet hours
-  VF.tickHooks.push(() => { const f = F(); if (!f || !f.ops) return; const c = f.ops; const h = VF.hourOf(VF.now()); if (h >= c.quiet.to && h < c.quiet.from) for (const m of c.outbox) if (m.status === 'queued') m.status = 'simulated'; });
+  // (It used to test `to <= h < from`, which is never true for a window that doesn't cross midnight: messages stayed queued.)
+  VF.tickHooks.push(() => { const f = F(); if (!f || !f.ops) return; const c = f.ops; if (!c.quiet || inQuiet(Object.assign({}, c.quiet, { on: true }), VF.hourOf(VF.now()))) return; for (const m of c.outbox) if (m.status === 'queued') m.status = 'simulated'; });
 
   // ================================================================ low-data mode
   const LKEY = 'voltfleet-os:lite';
@@ -248,16 +252,35 @@
 
   // ================================================================ job import (TMS / WMS / ERP export as CSV)
   // Columns: ref, client, place, kg, from, to  (place = an area name such as "Osu"; hours 0–23)
+  // RFC 4180 rows: quoted fields may hold commas, quotes ("") and line breaks; a UTF-8 BOM (Excel) is ignored;
+  // semicolon-separated files (Excel in French/European settings) work too. QA R3-06: the old split(',') broke on
+  // "Makola, wholesale" and on Excel's BOM.
+  O.csvRows = (text, max) => {
+    const src = String(text || '').replace(/^\uFEFF/, ''); const first = src.split(/\r?\n/, 1)[0] || '';
+    const sep = (first.match(/;/g) || []).length > (first.match(/,/g) || []).length ? ';' : ',';
+    const rows = []; let row = [], f = '', q = false;
+    for (let i = 0; i < src.length && rows.length < (max || 1e4); i++) {
+      const ch = src[i];
+      if (q) { if (ch === '"') { if (src[i + 1] === '"') { f += '"'; i++; } else q = false; } else f += ch; continue; }
+      if (ch === '"' && f.trim() === '') { q = true; f = ''; } else if (ch === sep) { row.push(f.trim()); f = ''; }
+      else if (ch === '\n' || ch === '\r') { if (ch === '\r' && src[i + 1] === '\n') i++; row.push(f.trim()); if (row.some((x) => x !== '')) rows.push(row); row = []; f = ''; }
+      else f += ch;
+    }
+    row.push(f.trim()); if (row.some((x) => x !== '') && rows.length < (max || 1e4)) rows.push(row);
+    return rows;
+  };
   O.parseJobs = (text) => {
-    const lines = String(text || '').split(/\r?\n/).map((l) => l.trim()).filter(Boolean); if (!lines.length) return { error: 'The file is empty.' };
-    const head = lines[0].toLowerCase().split(',').map((x) => x.trim()); const ix = (k) => head.indexOf(k);
+    if (String(text || '').length > 200_000) return { error: 'That file is too large. Import at most 200 jobs at a time.' };
+    const lines = O.csvRows(text, 202); if (!lines.length) return { error: 'The file is empty.' };
+    const head = lines[0].map((x) => x.toLowerCase().trim()); const ix = (k) => head.indexOf(k);
     if (['ref', 'place', 'kg', 'from', 'to'].some((k) => ix(k) < 0)) return { error: 'Use the columns ref, client, place, kg, from, to.' };
     const byName = {}; for (const [id, p] of Object.entries(VF.PLACES)) { byName[p.name.toLowerCase()] = id; byName[id] = id; }
     const jobs = [], bad = [];
-    lines.slice(1, 201).forEach((l, i) => {
-      const c = l.split(',').map((x) => x.trim()); const node = byName[(c[ix('place')] || '').toLowerCase()]; const kg = +c[ix('kg')], from = +c[ix('from')], to = +c[ix('to')];
-      if (!node || !(kg > 0 && kg < 5000) || !(from >= 0 && to <= 23 && to > from)) { bad.push(i + 2); return; }
-      jobs.push({ id: 'im' + (i + 1), ref: String(c[ix('ref')] || 'JOB-' + (i + 1)).slice(0, 20), name: String(ix('client') >= 0 ? c[ix('client')] : 'Imported job').slice(0, 40), node, kg: Math.round(kg), from, to, service: kg > 200 ? 20 : 8 });
+    const clean = (x, n) => String(x == null ? '' : x).replace(/[\u0000-\u001f\u007f<>"'`]/g, ' ').replace(/^[=+\-@\t]+/, '').trim().slice(0, n);
+    lines.slice(1, 201).forEach((c, i) => {
+      const node = byName[(c[ix('place')] || '').toLowerCase()]; const kg = +c[ix('kg')], from = +c[ix('from')], to = +c[ix('to')];
+      if (!node || !(kg > 0 && kg < 5000) || !(Number.isInteger(from) && Number.isInteger(to) && from >= 0 && to <= 23 && to > from)) { bad.push(i + 2); return; }
+      jobs.push({ id: 'im' + (i + 1), ref: clean(c[ix('ref')], 20) || 'JOB-' + (i + 1), name: clean(ix('client') >= 0 ? c[ix('client')] : '', 40) || 'Imported job', node, kg: Math.round(kg), from, to, service: kg > 200 ? 20 : 8 });
     });
     return { jobs, bad };
   };

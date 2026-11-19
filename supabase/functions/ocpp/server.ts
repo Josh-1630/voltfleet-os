@@ -6,8 +6,10 @@
 import { ChargerSession, validateCommand, powerLimitProfile, HEARTBEAT_S, type Store, type ChargePoint, type Connector, type Tx, type Command, type Socket } from './csms.ts';
 
 export interface ApiStore extends Store {
-  createNetwork(keyHash: string, name: string): Promise<string>;
-  countNetworksSince(ms: number): Promise<number>;
+  createNetwork(keyHash: string, name: string, createdBy?: string | null): Promise<string>;
+  // With `who`, count only that signed-in user's networks ('anon': only anonymous ones). Returns null when the
+  // database can't tell (migration 20261117_edge_limits.sql not applied yet): the caller then uses the old global limit.
+  countNetworksSince(ms: number, who?: string): Promise<number | null>;
   networkByKey(keyHash: string): Promise<{ id: string; name: string } | null>;
   addChargePoint(cp: ChargePoint): Promise<void>;
   countChargePoints(networkId: string): Promise<number>;
@@ -28,6 +30,8 @@ export interface ServerDeps {
   // Keep the worker alive until the promise settles (Supabase EdgeRuntime.waitUntil); optional.
   keepAlive?: (p: Promise<unknown>) => void;
   maxConnectionMs?: number;
+  // Who is asking: the Supabase user id of a valid session sent as "Authorization: Bearer <access token>", or null.
+  user?: (req: Request) => Promise<string | null>;
 }
 
 const enc = new TextEncoder();
@@ -42,7 +46,10 @@ export function randomToken(bytes = 24): string {
 function sameHash(a: string, b: string) { if (a.length !== b.length) return false; let x = 0; for (let i = 0; i < a.length; i++) x |= a.charCodeAt(i) ^ b.charCodeAt(i); return x === 0; }
 const CP_ID = /^[A-Za-z0-9._-]{3,48}$/;
 const isKey = (s: unknown) => typeof s === 'string' && /^[A-Za-z0-9_-]{20,128}$/.test(s);
-const MAX_CP = 25, MAX_NETWORKS_PER_HOUR = 30;
+const MAX_CP = 25;
+// Network creation limits (QA R1-08). Signed-in people have their own allowance; anonymous requests (the public
+// demo) share a pool, so anonymous traffic can't lock out signed-in operators; the global ceiling is a circuit breaker.
+export const LIMITS = { perUserPerDay: 5, anonPerHour: 20, globalPerHour: 200, legacyPerHour: 30 };
 class HttpError extends Error { status: number; constructor(status: number, msg: string) { super(msg); this.status = status; } }
 
 function cors(origin: string | null, allowed: string[]) {
@@ -51,26 +58,49 @@ function cors(origin: string | null, allowed: string[]) {
   return h;
 }
 
+// The Supabase user behind "Authorization: Bearer <access token>", checked with the project's own Auth server.
+// Anything else (no header, the publishable key, an expired or forged token) is anonymous.
+export async function sessionUser(req: Request, fetchFn: typeof fetch, env: (k: string) => string | undefined): Promise<string | null> {
+  const m = /^Bearer\s+([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)$/i.exec(req.headers.get('authorization') || '');
+  const base = env('SUPABASE_URL'); const key = env('SUPABASE_ANON_KEY') || req.headers.get('apikey') || '';
+  if (!m || !base || !key) return null;
+  try {
+    const p = JSON.parse(atob(m[1].split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+    if (!p || p.role !== 'authenticated' || typeof p.sub !== 'string') return null; // publishable/anon keys: skip the round trip
+  } catch { return null; }
+  try {
+    const r = await fetchFn(base.replace(/\/$/, '') + '/auth/v1/user', { headers: { Authorization: 'Bearer ' + m[1], apikey: key } });
+    if (!r.ok) return null;
+    const u = await r.json();
+    return u && typeof u.id === 'string' && /^[0-9a-f-]{36}$/i.test(u.id) ? u.id : null;
+  } catch { return null; }
+}
+
 export async function handleRequest(req: Request, d: ServerDeps): Promise<Response> {
   const url = new URL(req.url);
   const parts = url.pathname.split('/').filter(Boolean);
   const at = parts.lastIndexOf('ocpp');
-  const cpId = at >= 0 && parts[at + 1] ? decodeURIComponent(parts[at + 1]) : null;
+  let cpId: string | null = null;
+  try { cpId = at >= 0 && parts[at + 1] ? decodeURIComponent(parts[at + 1]) : null; } catch { cpId = null; } // malformed %-escapes
   if ((req.headers.get('upgrade') || '').toLowerCase() === 'websocket') return chargerSocket(req, url, cpId, d);
   return api(req, d);
 }
 
 // ---------------------------------------------------------------- charger connections
 async function chargerSocket(req: Request, url: URL, cpId: string | null, d: ServerDeps): Promise<Response> {
-  if (!cpId || !CP_ID.test(cpId)) return new Response('Unknown charge point', { status: 404 });
+  // Unknown IDs get the same answer as a wrong password, so the endpoint can't be used to list registered chargers.
+  const denied = () => new Response('Unauthorized', { status: 401, headers: { 'WWW-Authenticate': 'Basic realm="OCPP"' } });
+  if (!cpId || !CP_ID.test(cpId)) return denied();
   const cp = await d.store.getChargePoint(cpId);
-  if (!cp) return new Response('Unknown charge point', { status: 404 });
-  let password = url.searchParams.get('key');
+  if (!cp) return denied();
+  // ?key= exists for browsers and simulators, which can't send WebSocket auth headers. Set OCPP_ALLOW_QUERY_KEY=false in
+  // production so charger passwords never appear in URLs or access logs (security review item D).
+  let password = d.env('OCPP_ALLOW_QUERY_KEY') === 'false' ? null : url.searchParams.get('key');
   const auth = req.headers.get('authorization') || '';
   if (/^basic /i.test(auth)) {
     try { const [user, ...rest] = atob(auth.slice(6).trim()).split(':'); if (user === cpId) password = rest.join(':'); } catch { /* bad header */ }
   }
-  if (!password || !sameHash(await sha256(password), cp.passwordHash)) return new Response('Unauthorized', { status: 401, headers: { 'WWW-Authenticate': 'Basic realm="OCPP"' } });
+  if (!password || !sameHash(await sha256(password), cp.passwordHash)) return denied();
   const requested = (req.headers.get('sec-websocket-protocol') || '').split(',').map((s) => s.trim()).filter(Boolean);
   if (requested.length && !requested.includes('ocpp1.6')) return new Response('This central system speaks OCPP 1.6J (subprotocol ocpp1.6)', { status: 400 });
   const { socket, response } = d.upgrade(req, requested.length ? 'ocpp1.6' : null);
@@ -102,10 +132,16 @@ async function api(req: Request, d: ServerDeps): Promise<Response> {
   try {
     if (b.action === 'status') return reply(200, { ok: true, ocpp: ['1.6J'], heartbeat: HEARTBEAT_S });
     if (b.action === 'createNetwork') {
-      const name = String(b.name || 'My charging network').slice(0, 60);
-      if (await S.countNetworksSince(d.now() - 3600_000) >= MAX_NETWORKS_PER_HOUR) throw new HttpError(429, 'Too many networks created recently. Try again later.');
+      const name = String(b.name || '').replace(/[\u0000-\u001f\u007f<>]/g, ' ').trim().slice(0, 60) || 'My charging network';
+      const who = d.user ? await d.user(req) : null;
+      const now = d.now();
+      const mine = await S.countNetworksSince(now - (who ? 86400_000 : 3600_000), who || 'anon');
+      if (mine === null) { if (((await S.countNetworksSince(now - 3600_000)) as number) >= LIMITS.legacyPerHour) throw new HttpError(429, 'Too many networks created recently. Try again later.'); }
+      else if (who && mine >= LIMITS.perUserPerDay) throw new HttpError(429, `You've created ${LIMITS.perUserPerDay} networks today. Use one of them, or try again tomorrow.`);
+      else if (!who && mine >= LIMITS.anonPerHour) throw new HttpError(429, 'Too many networks were created recently without signing in. Sign in to create one, or try again later.');
+      else if (((await S.countNetworksSince(now - 3600_000)) as number) >= LIMITS.globalPerHour) throw new HttpError(429, 'Too many networks created recently. Try again later.');
       const key = randomToken(32);
-      const id = await S.createNetwork(await sha256(key), name);
+      const id = await S.createNetwork(await sha256(key), name, who);
       return reply(200, { networkId: id, networkKey: key, name });
     }
     if (!isKey(b.key)) throw new HttpError(401, 'Missing network access key.');
@@ -120,7 +156,7 @@ async function api(req: Request, d: ServerDeps): Promise<Response> {
     switch (b.action) {
       case 'network': {
         const cps = await S.listChargePoints(net.id); const ids = cps.map((c) => c.id); const now = d.now();
-        const [conns, txs, cmds, log, tags] = ids.length ? await Promise.all([S.listConnectors(ids), S.listTx(ids, 40), S.listCommands(ids, 40), S.listLog(ids, Math.min(200, Number(b.logLimit) || 80)), S.listIdTags(net.id)]) : [[], [], [], [], await S.listIdTags(net.id)];
+        const [conns, txs, cmds, log, tags] = ids.length ? await Promise.all([S.listConnectors(ids), S.listTx(ids, 40), S.listCommands(ids, 40), S.listLog(ids, Math.max(1, Math.min(200, Math.floor(Number(b.logLimit)) || 80))), S.listIdTags(net.id)]) : [[], [], [], [], await S.listIdTags(net.id)];
         return reply(200, {
           network: net, serverTime: now, heartbeat: HEARTBEAT_S,
           chargePoints: cps.map(({ passwordHash, instance, ...cp }) => ({ ...cp, online: !!cp.connected && !!cp.lastSeen && now - cp.lastSeen < HEARTBEAT_S * 2500, connectors: conns.filter((c) => c.cpId === cp.id).sort((a, z) => a.connectorId - z.connectorId) })),

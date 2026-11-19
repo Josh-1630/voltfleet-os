@@ -30,7 +30,7 @@ jobs:
       - name: Stage site files
         run: |
           mkdir _site
-          cp -r index.html styles.css sw.js manifest.webmanifest icon.svg .nojekyll icons img js _site/
+          cp -r index.html styles.css sw.js manifest.webmanifest icon.svg .nojekyll icons img js fonts _site/
       - uses: actions/upload-pages-artifact@v3
         with:
           path: _site

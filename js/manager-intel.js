@@ -387,9 +387,11 @@
       const days = Array.from({ length: 14 }, (_, i) => VF.startOfDay(VF.now()) + (i + 1) * DAY + 7 * HOUR);
       C.modal({ title: `Schedule service: ${v.name}`, sub: `${comp.label} · ${comp.fix}`, submitLabel: 'Book service', body: `<div class="form-grid-2">${C.field('Day', C.select('day', days.map((ms) => [ms, VF.fmtDayTime(ms) + (VF.startOfDay(ms) === VF.startOfDay(best) ? ' · suggested' : '')]), String(VF.startOfDay(best) + 7 * HOUR)))}${C.field(`Estimate (${VF.state.settings.currency})`, C.input('cost', comp.cost, 'type="number" min="0" step="10"'))}</div>${C.field('Notes for the workshop', `<textarea class="input" name="notes" rows="2" maxlength="200">${esc(`${comp.signal} at ${fmt.n(p.cur, comp.dec)} ${comp.unit}, limit ${fmt.n(comp.limit, comp.dec)} ${comp.unit}. Predicted: ${daysTxt(p)}.`)}</textarea>`)}`,
         onSubmit(d) {
+          const day = +d.day; const cost = d.cost === '' || d.cost == null ? comp.cost : +d.cost; const notes = String(d.notes || '').replace(/[\u0000-\u001f<>]/g, ' ').trim().slice(0, 200);
+          if (!days.includes(day)) return 'Choose a day.'; if (!(Number.isFinite(cost) && cost >= 0 && cost <= 1e6)) return 'Enter an estimate from 0 to 1,000,000.';
           const c = I.cfg(); const id = 'wo' + (F().seq++);
-          c.workOrders.unshift({ id, vehicleId: v.id, comp: comp.k, title: comp.label + ' service', reason: d.notes || '', date: +d.day, cost: +d.cost || comp.cost, status: 'scheduled', created: VF.now() });
-          v.maintenance.unshift({ id: 'mr' + id, date: +d.day, type: `${comp.label} service (predicted)`, cost: null, odo: Math.round(v.odo), notes: 'Booked from Predictive Maintenance. ' + (d.notes || ''), planned: true });
+          c.workOrders.unshift({ id, vehicleId: v.id, comp: comp.k, title: comp.label + ' service', reason: notes, date: day, cost, status: 'scheduled', created: VF.now() });
+          v.maintenance.unshift({ id: 'mr' + id, date: day, type: `${comp.label} service (predicted)`, cost: null, odo: Math.round(v.odo), notes: 'Booked from Predictive Maintenance. ' + notes, planned: true });
           VF.fleetNotice('info', `Service booked: ${v.name}`, `${comp.label} on ${VF.fmtDayTime(+d.day)}. ${comp.fix}`, v.id);
           save(); VF.toast('Service booked'); VF.rerender(); return null;
         } });
@@ -444,7 +446,7 @@
   Object.assign(VF.CHG, {
     'i-asset-depot': (el) => { const box = document.getElementById('i-asset-fields'); if (box) box.innerHTML = assetFields(I.cfg().depots[el.value]); },
     'i-factor': (el) => { I.cfg().factors[el.dataset.k] = el.checked; save(); VF.rerender(); },
-    'i-v2g-floor': (el) => { I.cfg().v2g.floor = +el.value; save(); VF.rerender(); },
+    'i-v2g-floor': (el) => { const v = +el.value; if (![30, 40, 50, 60].includes(v)) return; I.cfg().v2g.floor = v; save(); VF.rerender(); },
     'i-v2g-opt': (el) => { const c = I.cfg().v2g; c.optOut = c.optOut.filter((x) => x !== el.dataset.id); if (!el.checked) c.optOut.push(el.dataset.id); save(); VF.rerender(); },
   });
 })();

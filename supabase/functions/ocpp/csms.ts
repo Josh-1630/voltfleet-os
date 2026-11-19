@@ -12,6 +12,9 @@
 export const HEARTBEAT_S = 60;
 const CALL = 2, RESULT = 3, ERROR = 4;
 const CMD_TIMEOUT_MS = 30_000, CMD_MAX_AGE_MS = 10 * 60_000;
+// Abuse limits for one charger connection (QA round 3). Real chargers send a few messages a minute (a burst of
+// StatusNotifications at boot); a misbehaving or hostile client can't flood the database or the message log.
+export const MAX_CONNECTOR = 50, MAX_MESSAGE_CHARS = 65_536, BURST = 60, REFILL_PER_S = 10, SEEN_EVERY_MS = 5_000;
 
 // ---------------------------------------------------------------- types
 export interface ChargePoint {
@@ -54,6 +57,10 @@ function check(p: any, spec: Spec, max: Record<string, number> = {}) {
     if (type === 'string' && max[k] && v.length > max[k]) throw new OcppError('PropertyConstraintViolation', `${k} longer than ${max[k]}`);
   }
 }
+// Connector 0 is the charger itself; real chargers have a handful. Bounds stop a client from creating rows at will.
+function connectorOk(n: number, positive = false) {
+  if (n < (positive ? 1 : 0) || n > MAX_CONNECTOR) throw new OcppError('PropertyConstraintViolation', `connectorId must be ${positive ? 1 : 0}–${MAX_CONNECTOR}`);
+}
 const STATUSES = ['Available', 'Preparing', 'Charging', 'SuspendedEVSE', 'SuspendedEV', 'Finishing', 'Reserved', 'Unavailable', 'Faulted'];
 const ts = (s: unknown, now: number) => { const t = typeof s === 'string' ? Date.parse(s) : NaN; return isFinite(t) ? t : now; };
 const iso = (ms: number) => new Date(ms).toISOString();
@@ -78,6 +85,7 @@ export class ChargerSession {
   private closed = false;
   private busy = false;
   deadline = 0; quietMs = 8000; // when the host will close this connection; no new commands in the last seconds before it
+  private tokens = BURST; private refillAt = 0; private dropped = 0; private seenAt = 0;
   private cp: ChargePoint; private socket: Socket; private d: Deps; readonly instance: string;
   constructor(cp: ChargePoint, socket: Socket, d: Deps, instance: string) { this.cp = cp; this.socket = socket; this.d = d; this.instance = instance; }
 
@@ -101,12 +109,28 @@ export class ChargerSession {
     await this.d.store.log(this.cp.id, 'out', kind, action, frame[0] === CALL ? frame[3] : frame[2]);
   }
 
+  // Token bucket: true when this message may be processed.
+  private allow(): boolean {
+    const now = this.d.now();
+    if (!this.refillAt) this.refillAt = now;
+    this.tokens = Math.min(BURST, this.tokens + (now - this.refillAt) / 1000 * REFILL_PER_S); this.refillAt = now;
+    if (this.tokens >= 1) { this.tokens -= 1; this.dropped = 0; return true; }
+    return false;
+  }
   async onMessage(text: string) {
+    if (typeof text !== 'string' || text.length > MAX_MESSAGE_CHARS) return; // OCPP 1.6J messages are small
     let msg: any;
     try { msg = JSON.parse(text); } catch { return; } // not OCPP-J: ignore
-    if (!Array.isArray(msg) || typeof msg[1] !== 'string') return;
+    if (!Array.isArray(msg) || typeof msg[1] !== 'string' || msg[1].length > 36) return;
     const [type, id] = msg;
-    await this.d.store.updateChargePoint(this.cp.id, { lastSeen: this.d.now() });
+    if (!this.allow()) {
+      // Too many messages: answer calls without touching the database, and hang up on a client that keeps going.
+      if (type === CALL) { try { this.socket.send(JSON.stringify([ERROR, id, 'GenericError', 'Too many messages; slow down', {}])); } catch { /* closed */ } }
+      if (++this.dropped >= 200) { try { this.socket.close(1008, 'Too many messages'); } catch { /* closed */ } }
+      return;
+    }
+    const now = this.d.now();
+    if (now - this.seenAt >= SEEN_EVERY_MS) { this.seenAt = now; await this.d.store.updateChargePoint(this.cp.id, { lastSeen: now }); }
     if (type === CALL) {
       const action = String(msg[2]); const payload = msg[3];
       await this.d.store.log(this.cp.id, 'in', 'CALL', action, payload);
@@ -169,7 +193,8 @@ export class ChargerSession {
       case 'Heartbeat':
         return { currentTime: iso(now) };
       case 'StatusNotification': {
-        check(p, { connectorId: 'int', errorCode: 'string', status: 'string', info: 'string?', timestamp: 'string?' }, { info: 50 });
+        check(p, { connectorId: 'int', errorCode: 'string', status: 'string', info: 'string?', timestamp: 'string?' }, { info: 50, errorCode: 50 });
+        connectorOk(p.connectorId);
         if (!STATUSES.includes(p.status)) throw new OcppError('PropertyConstraintViolation', 'Unknown status');
         if (p.connectorId === 0) await S.updateChargePoint(cpId, { status: p.status });
         else {
@@ -184,6 +209,7 @@ export class ChargerSession {
         return { idTagInfo: await this.authorize(p.idTag) };
       case 'StartTransaction': {
         check(p, { connectorId: 'int', idTag: 'string', meterStart: 'int', timestamp: 'string', reservationId: 'int?' }, { idTag: 20 });
+        connectorOk(p.connectorId, true);
         const info = await this.authorize(p.idTag);
         const id = await S.startTx({ cpId, connectorId: p.connectorId, idTag: p.idTag, meterStart: p.meterStart, startAt: ts(p.timestamp, now), lastMeterWh: p.meterStart, lastPowerW: null, idTagStatus: info.status });
         return { transactionId: id, idTagInfo: info };
@@ -200,6 +226,7 @@ export class ChargerSession {
       }
       case 'MeterValues': {
         check(p, { connectorId: 'int', transactionId: 'int?', meterValue: 'array' });
+        connectorOk(p.connectorId);
         const r = readSamples(p.meterValue);
         const c = await S.getConnector(cpId, p.connectorId);
         await S.upsertConnector({ cpId, connectorId: p.connectorId, status: c?.status || 'Charging', errorCode: c?.errorCode || 'NoError', info: c?.info || null, updatedAt: now, powerW: r.powerW ?? c?.powerW ?? null, energyWh: r.energyWh ?? c?.energyWh ?? null, soc: r.soc ?? c?.soc ?? null });

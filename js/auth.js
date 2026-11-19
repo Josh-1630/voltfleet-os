@@ -49,6 +49,29 @@
   }
   async function rpc(fn, args) { const { data, error } = await sb.rpc(fn, args || {}); if (error) throw new Error(friendly(error)); return data; }
   A.rpc = rpc;
+  // For our own Edge Functions: the signed-in person's session, so per-person limits apply (QA R1-08). Never sent
+  // anywhere else; the demo stays anonymous.
+  A.bearer = () => (VF.mode === 'account' && A.session && A.session.access_token ? 'Bearer ' + A.session.access_token : null);
+  const missingFn = (e) => /PGRST202|could not find the function|schema cache/i.test(String((e && (e.code + ' ' + e.message)) || e || ''));
+  // QA R1-17: an authenticator counts only once it is confirmed by email (or added from a session that already used a
+  // confirmed one). Servers without migration 20261117_mfa_trust.sql don't have the function: nothing to do there.
+  async function trustFactor(factorId) {
+    const { data, error } = await sb.rpc('trust_my_factor', { p_factor: factorId || null });
+    if (error) { if (missingFn(error)) return null; throw new Error(friendly(error)); }
+    return data;
+  }
+  // QA R2-07: in a team workspace, security-relevant events also go to the server's audit log (public.audit_log), which
+  // members can read but nobody can rewrite. The in-app trail stays as it was (it is part of the shared snapshot).
+  const SERVER_EVENTS = new Set(['reveal-pii', 'data-export', 'erasure', 'consent-change', 'retention-change', 'station-status', 'export', 'reveal-secret', 'rotate-secret', 'webhook-create', 'connect-grant', 'connect-revoke', 'app-status', 'pricing-change', 'remote-command', 'booking-cancel', 'access-denied']);
+  const audit0 = VF.audit;
+  VF.audit = function (actor, action, target, reason, t) {
+    audit0(actor, action, target, reason, t);
+    if (VF.mode !== 'account' || !A.account || !A.account.org || !SERVER_EVENTS.has(action)) return;
+    const clip = (x) => (x == null ? null : String(x).slice(0, 300));
+    Promise.resolve(sb.rpc('record_event', { p_action: action, p_target: clip(target), p_reason: clip(reason) }))
+      .then((r) => { if (r && r.error && !/PGRST202|could not find the function|schema cache/i.test((r.error.code || '') + ' ' + (r.error.message || ''))) console.warn('VoltFleet audit:', r.error.message); })
+      .catch(() => { /* offline: the in-app trail still has it */ });
+  };
   const cacheAccount = (a) => { try { if (a) localStorage.setItem(ACCT_CACHE, JSON.stringify(a)); else localStorage.removeItem(ACCT_CACHE); } catch (e) { /* not kept */ } };
 
   // ---------------------------------------------------------------- session
@@ -89,7 +112,16 @@
     if (acct.status === 'needs_onboarding' || !acct.org) return 'onboard';
     let lvl = null; try { const r = await sb.auth.mfa.getAuthenticatorAssuranceLevel(); lvl = r && r.data; } catch (e) { /* older session */ }
     if (lvl && lvl.nextLevel === 'aal2' && lvl.currentLevel !== 'aal2') return 'mfa';       // has an authenticator: use it
-    if (acct.mfa_required || (A.isStaff(acct) && lvl && lvl.currentLevel !== 'aal2')) return 'mfa-enroll'; // staff without one: set it up
+    // QA R1-17 (servers with 20261117_mfa_trust.sql report mfa_trust): a password alone can't add an authenticator.
+    const trust = A.isStaff(acct) && acct.mfa_trust && typeof acct.mfa_trust === 'object' ? acct.mfa_trust : null;
+    if (trust && trust.untrusted > 0 && lvl && lvl.currentLevel === 'aal2') {
+      if (trust.email_proof) { try { const a2 = await trustFactor(null); if (a2) { Object.assign(acct, a2); A.account = acct; cacheAccount(acct); } if (!acct.mfa_required) return 'enter'; } catch (e) { /* ask for the email step */ } }
+      L().mfaEmail = { confirm: true }; return 'mfa-email';
+    }
+    if (acct.mfa_required || (A.isStaff(acct) && lvl && lvl.currentLevel !== 'aal2')) {   // staff without one: set it up
+      if (trust && !trust.email_proof) { L().mfaEmail = { confirm: false }; return 'mfa-email'; } // only from an emailed link
+      return 'mfa-enroll';
+    }
     return 'enter';
   };
   async function verifiedFactors() { const { data, error } = await sb.auth.mfa.listFactors(); if (error) throw error; return ((data && data.totp) || []).filter((f) => f.status === 'verified'); }
@@ -184,7 +216,15 @@
     else if (m === 'mfa') body = head('Two-factor sign-in', 'Enter the 6-digit code from your authenticator app.') + `<form id="auth-mfa" class="auth-form" novalidate>${field('Code', '<input class="input lg mono" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]*" maxlength="6" required autofocus>')}${err(ui)}${btn('Verify')}</form>
         <details class="small muted"><summary>Lost your phone or authenticator?</summary><p>Ask your VoltFleet administrator to reset two-factor sign-in for your account after they’ve confirmed who you are. If you added a backup device, use that instead.</p></details>
         <button type="button" class="link-btn" data-act="auth-signout">${icon('log-out')}Sign out</button>`;
-    else if (m === 'mfa-enroll') body = head('Protect your account', `${ui.staffNote === false ? 'Turn on two-factor sign-in.' : 'Staff accounts need two-factor sign-in: a password plus a code from an app on your phone.'}`) + (ui.enroll ? enrollBox(ui.enroll, 'auth-mfa-enroll') : `${err(ui)}<button type="button" class="btn" data-act="auth-enroll-retry">${icon('refresh-cw')}Try again</button>`) + `<button type="button" class="link-btn" data-act="auth-signout">${icon('log-out')}Sign out</button>`;
+    else if (m === 'mfa-email') {
+      const me = ui.mfaEmail || {};
+      body = head(me.confirm ? 'Confirm your authenticator' : 'Confirm it’s you', me.confirm
+        ? 'This authenticator hasn’t been confirmed by email yet, so it can’t open your team’s workspace. We’ll email you a one-time sign-in link; open it on this device, then enter a code from your authenticator again.'
+        : 'Before you add an authenticator, we email you a one-time sign-in link. That way, someone who only knows your password can’t add their own phone to your account.') +
+        `<form id="auth-mfa-email" class="auth-form" novalidate><p class="small muted">${icon('mail')} The link goes to <strong>${esc((A.account && A.account.email) || ui.email || 'your email address')}</strong>. Open it in this browser.</p>${err(ui)}${ok(ui)}${btn(me.sent ? 'Send the link again' : 'Email me the link')}</form>
+        <details class="small muted"><summary>Didn’t add an authenticator yourself?</summary><p>Someone may know your password. Change it now (Forgot password? on the sign-in page), and ask your VoltFleet administrator to remove authenticators you don’t recognise.</p></details>
+        <button type="button" class="link-btn" data-act="auth-signout">${icon('log-out')}Sign out</button>`;
+    } else if (m === 'mfa-enroll') body = head('Protect your account', `${ui.staffNote === false ? 'Turn on two-factor sign-in.' : 'Staff accounts need two-factor sign-in: a password plus a code from an app on your phone.'}`) + (ui.enroll ? enrollBox(ui.enroll, 'auth-mfa-enroll') : `${err(ui)}<button type="button" class="btn" data-act="auth-enroll-retry">${icon('refresh-cw')}Try again</button>`) + `<button type="button" class="link-btn" data-act="auth-signout">${icon('log-out')}Sign out</button>`;
     else if (m === 'invite') {
       const inv = ui.invites || [];
       body = head('You’ve been invited', 'Joining shares your name and email with that organisation, and everything you add in its workspace is visible to its team. Only accept an invitation you expected.') +
@@ -245,6 +285,13 @@
         busy(); const { error } = await sb.auth.signInWithOtp({ email, options: { emailRedirectTo: redirect(), shouldCreateUser: false } });
         return error ? setErr(friendly(error)) : setOk('If that email has an account, a sign-in link is on its way. Open it on this device.');
       }
+      if (id === 'auth-mfa-email') {
+        const to = String((A.account && A.account.email) || L().email || '').trim().toLowerCase();
+        if (!emailOk(to)) return setErr('This account has no email address to confirm. Ask your administrator.');
+        busy(); const { error } = await sb.auth.signInWithOtp({ email: to, options: { emailRedirectTo: redirect(), shouldCreateUser: false } });
+        if (error) return setErr(friendly(error));
+        L().mfaEmail = Object.assign({}, L().mfaEmail, { sent: true }); return setOk('Link sent. Open it in this browser to continue. It can take a minute to arrive.');
+      }
       if (id === 'auth-reset') {
         if (!emailOk(email)) return setErr('Enter a valid email address.');
         busy(); const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: redirect() });
@@ -256,7 +303,7 @@
         if (!factorId) { const fs = await verifiedFactors(); factorId = fs[0] && fs[0].id; }
         if (!factorId) return setErr('No authenticator found. Sign out and in again.');
         busy(); const { error } = await sb.auth.mfa.challengeAndVerify({ factorId, code }); if (error) return setErr(friendly(error));
-        if (id === 'auth-mfa-enroll') VF.toast('Two-factor sign-in is on');
+        if (id === 'auth-mfa-enroll') { try { await trustFactor(factorId); } catch (e) { /* the next step asks for the email link */ } VF.toast('Two-factor sign-in is on'); }
         L().enroll = null; return afterSignIn();
       }
       if (id === 'auth-recover') {
@@ -319,7 +366,9 @@
       if (!/^\d{6}$/.test(code) || !A.acctEnroll) { const e = document.getElementById('acct-mfa-error'); if (e) { e.hidden = false; e.lastElementChild.textContent = 'Enter the 6-digit code.'; } return; }
       const { error } = await sb.auth.mfa.challengeAndVerify({ factorId: A.acctEnroll.id, code });
       if (error) { const e = document.getElementById('acct-mfa-error'); if (e) { e.hidden = false; e.lastElementChild.textContent = friendly(error); } return; }
-      A.acctEnroll = null; VF.toast('Authenticator added'); openAccount();
+      const added = A.acctEnroll.id; A.acctEnroll = null;
+      try { await trustFactor(added); VF.toast('Authenticator added'); } catch (e) { VF.toast(e.message); }
+      openAccount();
     },
     'acct-mfa-cancel': async () => { if (A.acctEnroll) { try { await sb.auth.mfa.unenroll({ factorId: A.acctEnroll.id }); } catch (e) { /* unverified */ } } A.acctEnroll = null; openAccount(); },
     'acct-mfa-remove': async (el) => {

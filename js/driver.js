@@ -410,6 +410,13 @@
         consents: d.consents, consentHistory: d.consentLog,
         bookings: VF.state.bookings.filter((b) => b.driverId === d.id).map((b) => ({ code: b.code, station: VF.station(b.stationId).name, start: new Date(b.start).toISOString(), status: b.status, estCost: b.estCost, actualKwh: b.actualKwh, actualCost: b.actualCost })),
         sessions: VF.state.sessions.filter((x) => x.driverId === d.id).map((x) => ({ station: VF.station(x.stationId).name, start: new Date(x.start).toISOString(), end: new Date(x.end).toISOString(), kwh: +x.kwh.toFixed(2), cost: +x.cost.toFixed(2) })),
+        // QA R3: everything else the app keeps about this driver (a copy of the data must be complete: Act 843 s.35).
+        wallet: d.wallet ? { paymentMethod: d.wallet.method || null, transactions: (d.wallet.tx || []).map((x) => ({ at: new Date(x.t).toISOString(), kind: x.kind, amount: x.amount, provider: x.provider || null, ref: x.ref || null })) } : null,
+        alertPreferences: d.alertPrefs || null,
+        roadsideRescue: d.rescue ? { requested: new Date(d.rescue.t).toISOString(), status: d.rescue.status, ref: d.rescue.ref, fee: d.rescue.fee, locationShared: !!d.rescue.loc } : null,
+        cabinPreCool: d.precool && d.precool.at ? new Date(d.precool.at).toISOString() : null,
+        connectedApps: ((VF.state.connect && VF.state.connect.grants) || []).filter((g) => g.driverId === d.id).map((g) => { const a = VF.state.connect.apps.find((x) => x.id === g.appId); return { app: a ? a.name : g.appId, permissions: g.scopes, since: new Date(g.at).toISOString(), revoked: !!g.revoked }; }),
+        notifications: VF.state.notices.filter((n) => n.driverId === d.id).map((n) => ({ at: new Date(n.t).toISOString(), title: n.title, body: n.body })),
       };
       const json = JSON.stringify(data, null, 2);
       VF.audit(u.id, 'data-export', 'own data (self-service)');
@@ -440,6 +447,8 @@
     d.consentLog.push({ t: VF.now(), key: k, value: val });
     VF.audit(u.id, 'consent-change', `${k} → ${val ? 'on' : 'off'}`);
     if (k === 'telematics') v.linked.status = val ? 'connected' : 'revoked';
+    // Withdrawing "share arrival time" also drops the live arrival times already shared (the booked slot stays).
+    if (k === 'shareEta' && !val) for (const b of VF.state.bookings) if (b.driverId === d.id && b.eta != null) b.eta = b.start;
     VF.save(); VF.rerender();
     VF.toast(val ? 'Sharing turned on' : 'Sharing turned off');
   }
@@ -448,6 +457,11 @@
     const d = VF.driver(driverId); const u = VF.user(d.userId); const v = VF.driverVehicle(driverId);
     u.name = 'Deleted user'; u.email = null; u.phone = null; u.deleted = true;
     d.deleted = true; d.consents = { telematics: false, shareSoc: false, shareEta: false, analytics: false, marketing: false }; d.consentLog = [];
+    // QA R3: the rest of the personal data the app keeps (wallet details, preferences, rescue location, schedules).
+    if (d.wallet) d.wallet.method = { provider: '', to: '—' }; // no phone-derived detail; amounts and references stay as pseudonymous billing records
+    delete d.alertPrefs; d.rescue = null; d.precool = null;
+    for (const b of VF.state.bookings) if (b.driverId === driverId) b.eta = b.start;
+    VF.state.requests = (VF.state.requests || []).filter((r) => !(r.driverId === driverId && r.status === 'open'));
     if (v) { v.plate = null; v.vin = null; v.trip = null; v.status = 'parked'; v.linked.status = 'revoked'; }
     VF.state.notices = VF.state.notices.filter((n) => n.driverId !== driverId);
   };

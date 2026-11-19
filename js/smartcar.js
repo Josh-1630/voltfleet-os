@@ -35,7 +35,9 @@
   // ---------------------------------------------------------------- function calls
   async function call(action, body) {
     if (!FN) throw new Error('Cloud functions are not configured (js/config.js).');
-    const r = await fetch(FN, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(cloud.key ? { apikey: cloud.key } : {}) }, body: JSON.stringify({ action, ...(body || {}) }) });
+    // Signed in: say who is asking, only for the action with a per-person limit (QA R1-08). The demo stays anonymous.
+    const who = action === 'start' && VF.auth && VF.auth.bearer ? VF.auth.bearer() : null;
+    const r = await fetch(FN, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(cloud.key ? { apikey: cloud.key } : {}), ...(who ? { Authorization: who } : {}) }, body: JSON.stringify({ action, ...(body || {}) }) });
     let j = null; try { j = await r.json(); } catch (e) { /* not JSON */ }
     if (!r.ok) { const err = new Error((j && j.error) || `Request failed (${r.status})`); err.status = r.status; throw err; }
     return j;

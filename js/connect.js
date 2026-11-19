@@ -6,7 +6,7 @@
 (function () {
   const { esc, clamp, sum, fmt, icon, pill, hash } = VF;
   const MIN = VF.MIN, DAY = VF.DAY;
-  const ui = VF.ui.connect = { app: null, ex: { app: null, vid: '', ep: 'battery', action: 'START' }, last: null, flow: null, vin: '', compat: null, reveal: {}, whOpen: null, delivery: null, addTest: 'Tesla Model 3' };
+  const ui = VF.ui.connect = { app: null, ex: { app: null, vid: '', ep: 'battery', action: 'START' }, last: null, flow: null, vin: '', compat: null, reveal: {}, fresh: {}, whOpen: null, delivery: null, addTest: 'Tesla Model 3' };
 
   // ---------------------------------------------------------------- reference
   const SCOPES = {
@@ -47,12 +47,25 @@
     return oemRow(make).cov[i] > 0;
   }
   const appVid = (appId, key) => 'veh_' + hash(appId + ':' + key).toLowerCase();
+  // QA R2-07: app and webhook secrets never sit in the shared workspace snapshot, where every member (and, in the
+  // demo, every visitor) could read or replace them. A new secret is made with the browser's cryptographic random
+  // generator, shown once in this tab only (ui.fresh), and the snapshot keeps just its last four characters.
+  // When Connect becomes a real API, the server issues and stores secrets (hashed) instead.
+  const randHex = (n) => { const a = new Uint8Array(n); crypto.getRandomValues(a); return Array.from(a, (b) => b.toString(16).padStart(2, '0')).join(''); };
+  const masked = (prefix, tail) => prefix + '•'.repeat(24) + tail;
+  function scrubSecrets(c) {
+    for (const a of (c && c.apps) || []) if (typeof a.secret === 'string' && !a.secret.includes('•')) { a.secretTail = a.secret.slice(-4); a.secret = masked('vfs_', a.secretTail); }
+    for (const w of (c && c.webhooks) || []) if (typeof w.secret === 'string' && !w.secret.includes('•')) { w.secretTail = w.secret.slice(-4); w.secret = masked('whsec_', w.secretTail); }
+  }
+  VF.scrubConnectSecrets = scrubSecrets;
+  // Privacy: a driver who deleted their account, or switched vehicle data off, can't be read through Connect.
+  const grantLive = (g) => { if (!g || g.revoked) return false; const d = VF.driver(g.driverId); return !!(d && !d.deleted && d.consents && d.consents.telematics); };
   const C = () => VF.state.connect;
   const app = (id) => C().apps.find((a) => a.id === id);
   const org = (id) => C().orgs.find((o) => o.id === id);
   const me = () => VF.user(VF.session.userId);
   const myApps = () => C().apps.filter((a) => a.orgId === me().orgId);
-  const liveGrants = (appId) => C().grants.filter((g) => g.appId === appId && !g.revoked);
+  const liveGrants = (appId) => C().grants.filter((g) => g.appId === appId && grantLive(g));
 
   // ---------------------------------------------------------------- seed
   VF.seedConnect = function () {
@@ -88,6 +101,7 @@
       webhooks: [{ id: 'wh1', appId: 'app1', url: 'https://api.fleetpay.example/hooks/voltfleet', events: ['charge.started', 'charge.completed', 'battery.low', 'vehicle.disconnected'], secret: 'whsec_' + hash('wh1').toLowerCase() + hash('wh1b').toLowerCase(), active: true }],
       pricing: { build: 1.5, scale: 1.1 },
     };
+    scrubSecrets(s.connect);
     syncTrack();
     for (let i = 0; i < 14; i++) backgroundCall(now - (14 - i) * 3 * MIN);
     const evs = ['charge.completed', 'charge.started', 'battery.low', 'charge.completed', 'charge.started', 'charge.completed'];
@@ -96,7 +110,14 @@
       s.connect.deliveries[0].t = now - (6 - i) * 11 * MIN;
     });
   };
-  VF.ensureConnect = () => { if (!VF.state.connect) VF.seedConnect(); };
+  VF.ensureConnect = () => { if (!VF.state.connect) VF.seedConnect(); else scrubSecrets(VF.state.connect); };
+  // Erasure (driver app or admin): third-party apps lose access at once and are told to delete what they hold.
+  const erase0 = VF.eraseDriver;
+  if (erase0) VF.eraseDriver = function (driverId) {
+    const c = VF.state.connect;
+    if (c) for (const g of c.grants) if (g.driverId === driverId && !g.revoked) { g.revoked = true; g.revokedAt = VF.now(); deliver(g.appId, 'vehicle.disconnected', g.vid, { reason: 'account_deleted', delete_data_within_days: 30 }); }
+    return erase0.apply(this, arguments);
+  };
   const resetOrig = VF.reset;
   VF.reset = () => { resetOrig(); VF.seedConnect(); };
 
@@ -130,7 +151,8 @@
     } else {
       const x = resolve(a, vid);
       if (!x) res = err(404, 'RESOURCE_NOT_FOUND', 'VEHICLE', 'No vehicle with this ID is connected to your application.');
-      else if (x.grant && x.grant.revoked) res = err(401, 'AUTHENTICATION', 'ACCESS_REVOKED', 'The vehicle owner revoked access. Ask them to reconnect through VoltFleet Connect.');
+      else if (x.grant && (x.grant.revoked || !VF.driver(x.grant.driverId) || VF.driver(x.grant.driverId).deleted)) res = err(401, 'AUTHENTICATION', 'ACCESS_REVOKED', 'The vehicle owner revoked access. Ask them to reconnect through VoltFleet Connect.');
+      else if (x.grant && !grantLive(x.grant)) res = err(403, 'PERMISSION', 'VEHICLE_DATA_PAUSED', 'The vehicle owner has switched off vehicle data sharing.');
       else if (x.grant && !x.grant.scopes.includes(ep.scope)) res = err(403, 'PERMISSION', 'SCOPE_NOT_GRANTED', `The owner did not grant ${ep.scope}.`);
       else if (!capable(x.make, ep.field)) res = err(501, 'COMPATIBILITY', 'VEHICLE_NOT_CAPABLE', `${x.make} vehicles connected through ${SOURCE_PHRASE[x.test ? sourceOf(x.make) : x.grant.source]} do not support this endpoint.`);
       else res = respond(ep, x, action);
@@ -168,7 +190,7 @@
   }
   // Partner servers polling in the background, so usage and logs move like a real platform
   function backgroundCall(t) {
-    const g = VF.pick(C().grants.filter((x) => !x.revoked && app(x.appId).mode === 'live')); if (!g) return;
+    const g = VF.pick(C().grants.filter((x) => grantLive(x) && app(x.appId).mode === 'live')); if (!g) return;
     const a = app(g.appId);
     const eps = ENDPOINTS.filter((e) => e.method === 'GET' && e.id !== 'vehicles' && a.scopes.some((x) => x.scope === e.scope));
     const ep = Math.random() < 0.04 ? ENDPOINTS.find((e) => e.id === 'location') : VF.pick(eps);
@@ -186,7 +208,7 @@
     if (C().deliveries.length > 150) C().deliveries.length = 150;
   }
   function emitForDriver(driverId, event, dataFn) {
-    for (const g of C().grants) if (g.driverId === driverId && !g.revoked) deliver(g.appId, event, g.vid, dataFn(g));
+    for (const g of C().grants) if (g.driverId === driverId && grantLive(g)) deliver(g.appId, event, g.vid, dataFn(g));
   }
   function syncTrack() {
     const live = {};
@@ -330,12 +352,13 @@
 
   function pageApps() {
     return myApps().map((a) => {
-      const shown = ui.reveal[a.id];
+      const fresh = ui.fresh[a.id];
       return `<section class="panel"><div class="panel-head"><div><h2>${esc(a.name)}</h2><div class="sub">${esc(org(a.orgId).name)} · created ${VF.fmtDate(a.createdAt)} · ${vehicleCount(a)} ${a.mode === 'test' ? 'test' : 'connected'} vehicles</div></div><div class="row">${modePill(a)}${pill('accent plain', PLANS[a.plan].name + ' plan')}<button class="btn small primary" data-act="dev-preview" data-id="${a.id}">${icon('car')}Preview Connect</button></div></div>
         <div class="panel-body grid g-2">
           <div class="stack">
             <div class="cred"><span class="faint small">Client ID</span><code>${esc(a.clientId)}</code><button class="icon-btn" data-act="dev-copy" data-v="${esc(a.clientId)}" aria-label="Copy client ID">${icon('copy')}</button></div>
-            <div class="cred"><span class="faint small">Client secret</span><code>${shown ? esc(a.secret) : 'vfs_' + '•'.repeat(24) + a.secret.slice(-4)}</code><button class="btn small ghost" data-act="dev-secret" data-id="${a.id}">${shown ? 'Hide' : 'Reveal'}</button><button class="btn small ghost danger" data-act="dev-rotate" data-id="${a.id}">Rotate</button></div>
+            <div class="cred"><span class="faint small">Client secret</span><code>${fresh ? esc(fresh) : esc(String(a.secret || masked('vfs_', a.secretTail || '····')))}</code>${fresh ? `<button class="icon-btn" data-act="dev-copy" data-v="${esc(fresh)}" aria-label="Copy client secret">${icon('copy')}</button><button class="btn small ghost" data-act="dev-secret" data-id="${a.id}">Done</button>` : ''}<button class="btn small ghost danger" data-act="dev-rotate" data-id="${a.id}">${fresh ? 'Rotate again' : 'Rotate'}</button></div>
+            <p class="faint small">${fresh ? `${icon('triangle-alert')} Copy it now and keep it on your server. It isn’t stored and won’t be shown again.` : 'Shown once, when it is created. Lost it? Rotate to get a new one.'}</p>
             <label class="field"><span>Redirect URI</span><input class="input" id="ru-${a.id}" value="${esc(a.redirect)}" data-chg="dev-redirect" data-id="${a.id}"></label>
             <div class="row"><span class="faint small">Mode</span><div class="seg" role="group">${['test', 'live'].map((m) => `<button type="button" data-act="dev-mode" data-id="${a.id}" data-m="${m}" aria-pressed="${a.mode === m}">${m === 'test' ? 'Test' : 'Live'}</button>`).join('')}</div></div>
           </div>
@@ -417,7 +440,7 @@
         <div class="row">${Object.entries(EVENTS).map(([k, l]) => `<label class="check"><input type="checkbox" id="wh-ev-${k.replace('.', '-')}" data-ev="${k}" checked>${esc(k)}</label>`).join('')}</div>
         <div class="row"><button class="btn primary" data-act="dev-wh-save">Save endpoint</button><button class="btn ghost" data-act="dev-wh-cancel">Cancel</button></div></div></section>` : ''}
       ${hooks.map((w) => `<section class="panel"><div class="panel-head"><div><h2 class="mono" style="font-size:14px">${esc(w.url)}</h2><div class="sub">${w.events.map(esc).join(' · ')}</div></div><div class="row">${w.active ? pill('ok', 'Active') : pill('', 'Paused')}<button class="btn small" data-act="dev-wh-test" data-id="${w.id}">Send test event</button><button class="btn small ghost" data-act="dev-wh-toggle" data-id="${w.id}">${w.active ? 'Pause' : 'Resume'}</button></div></div>
-        <div class="panel-body"><div class="cred"><span class="faint small">Signing secret</span><code>${esc(w.secret.slice(0, 10))}••••••••••••</code></div><p class="faint small">Every delivery carries a <code>VF-Signature</code> header (HMAC-SHA256 of the body with this secret). Failed deliveries retry with backoff for 24 hours.</p></div></section>`).join('') || `<section class="panel"><div class="empty">No webhook endpoints for ${esc(a.name)} yet.</div></section>`}
+        <div class="panel-body"><div class="cred"><span class="faint small">Signing secret</span><code>${ui.fresh[w.id] ? esc(ui.fresh[w.id]) : esc(String(w.secret || masked('whsec_', w.secretTail || '····')))}</code>${ui.fresh[w.id] ? `<button class="icon-btn" data-act="dev-copy" data-v="${esc(ui.fresh[w.id])}" aria-label="Copy signing secret">${icon('copy')}</button>` : ''}</div>${ui.fresh[w.id] ? `<p class="faint small">${icon('triangle-alert')} Copy it now: it isn’t stored and won’t be shown again.</p>` : ''}<p class="faint small">Every delivery carries a <code>VF-Signature</code> header (HMAC-SHA256 of the body with this secret). Failed deliveries retry with backoff for 24 hours.</p></div></section>`).join('') || `<section class="panel"><div class="empty">No webhook endpoints for ${esc(a.name)} yet.</div></section>`}
       <div class="grid g-2">
         <section class="panel"><div class="panel-head"><div><h2>Deliveries</h2><div class="sub">Events sent to your endpoints</div></div></div><div class="table-wrap"><table class="t"><thead><tr><th>Time</th><th>Event</th><th>Vehicle</th><th>Status</th></tr></thead><tbody data-live="dv-dl">${deliveryRows(dl)}</tbody></table></div></section>
         <section class="panel"><div class="panel-head"><h2>Payload</h2></div><div class="panel-body">${sel ? `<pre class="code">${esc(JSON.stringify(sel.payload, null, 2))}</pre><p class="faint small" style="margin-top:6px">Location fields appear only when the driver granted <code>read_location</code>.</p>` : '<div class="empty">Select a delivery to see its payload.</div>'}</div></section>
@@ -498,7 +521,7 @@
       if (page === 'dev-webhooks') return { 'dv-dl': { html: deliveryRows(C().deliveries.filter((d) => d.appId === ui.app).slice(0, 25)) } };
       return null;
     },
-    leave() { ui.reveal = {}; },
+    leave() { ui.reveal = {}; ui.fresh = {}; },
   };
   const adm = VF.apps.admin;
   adm.nav.splice(adm.nav.findIndex((n) => n.id === 'ad-vehicles') + 1, 0, { id: 'ad-connect', label: 'Developer platform', icon: 'cpu', title: 'VoltFleet Connect', eyebrow: 'Super admin' });
@@ -509,8 +532,12 @@
   Object.assign(VF.ACT, {
     'dev-app': (el) => { ui.app = el.dataset.id; ui.last = null; ui.delivery = null; VF.rerender(); },
     'dev-copy': (el) => VF.copyText(el.dataset.v, 'Copied text'),
-    'dev-secret': (el) => { const id = el.dataset.id; ui.reveal[id] = !ui.reveal[id]; if (ui.reveal[id]) devAudit('reveal-secret', app(id).name); VF.save(); VF.rerender(); },
-    'dev-rotate': (el) => { const a = app(el.dataset.id); a.secret = 'vfs_' + hash(String(Math.random())).toLowerCase() + hash(String(Math.random())).toLowerCase() + hash(String(Math.random())).toLowerCase(); ui.reveal[a.id] = true; devAudit('rotate-secret', a.name); VF.save(); VF.rerender(); VF.toast('New secret created. The old one stops working in 24 hours.'); },
+    'dev-secret': (el) => { delete ui.fresh[el.dataset.id]; VF.rerender(); }, // "Done": the new secret is gone from this tab too
+    'dev-rotate': (el) => {
+      const a = app(el.dataset.id); if (!a) return;
+      const sec = 'vfs_' + randHex(24); ui.fresh[a.id] = sec; a.secretTail = sec.slice(-4); a.secret = masked('vfs_', a.secretTail);
+      devAudit('rotate-secret', a.name); VF.save(); VF.rerender(); VF.toast('New secret created. Copy it now; the old one stops working in 24 hours.');
+    },
     'dev-mode': (el) => { const a = app(el.dataset.id); a.mode = el.dataset.m; if (a.mode === 'live' && a.plan === 'free') a.plan = 'build'; ui.last = null; VF.save(); VF.rerender(); },
     'dev-preview': (el) => VF.openConnect(el.dataset.id, 'test'),
     'dev-send': () => {
@@ -533,7 +560,8 @@
       if (!/^https:\/\/[^\s]+\.[^\s]+/.test(url)) { VF.toast('Enter an HTTPS URL, for example https://your-app.example/webhooks'); return; }
       const events = Array.from(document.querySelectorAll('[data-ev]')).filter((x) => x.checked).map((x) => x.dataset.ev);
       if (!events.length) { VF.toast('Pick at least one event'); return; }
-      C().webhooks.push({ id: 'wh' + (++VF.state.seq), appId: ui.app, url, events, secret: 'whsec_' + hash(url).toLowerCase() + hash(url + 'x').toLowerCase(), active: true });
+      const sec = 'whsec_' + randHex(24); const id = 'wh' + (++VF.state.seq); ui.fresh[id] = sec;
+      C().webhooks.push({ id, appId: ui.app, url, events, secret: masked('whsec_', sec.slice(-4)), secretTail: sec.slice(-4), active: true });
       ui.whOpen = null; devAudit('webhook-create', url); VF.save(); VF.rerender(); VF.toast('Webhook endpoint added');
     },
     'dev-wh-test': (el) => { const w = C().webhooks.find((x) => x.id === el.dataset.id); deliver(w.appId, w.events[0], 'veh_test0000', { test: true }); VF.save(); VF.rerender(); VF.toast(`Test ${w.events[0]} event sent`); },
@@ -581,7 +609,12 @@
     'ad-app-status': (el) => { const a = app(el.dataset.id); a.status = a.status === 'active' ? 'suspended' : 'active'; VF.audit(VF.session.userId, 'app-status', `${a.name} → ${a.status}`); VF.save(); VF.rerender(); },
   });
   Object.assign(VF.CHG, {
-    'dev-redirect': (el) => { const a = app(el.dataset.id); if (/^https?:\/\//.test(el.value)) { a.redirect = el.value.trim(); VF.save(); VF.toast('Redirect URI saved'); } else VF.toast('Use a full URL starting with https://'); },
+    // OAuth redirect URIs must be https (plain http only for local testing), with no fragment (RFC 6749 §3.1.2).
+    'dev-redirect': (el) => {
+      const a = app(el.dataset.id); const v = el.value.trim(); let u = null; try { u = new URL(v); } catch (e) { /* invalid */ }
+      const okUri = u && !u.hash && v.length <= 300 && (u.protocol === 'https:' || (u.protocol === 'http:' && /^(localhost|127\.0\.0\.1)$/.test(u.hostname)));
+      if (a && okUri) { a.redirect = v; VF.save(); VF.toast('Redirect URI saved'); } else { VF.toast('Use a full https:// URL (http only for localhost), without #'); VF.rerender(); }
+    },
     'dev-scope': (el) => {
       const a = app(el.dataset.id); const k = el.dataset.s; let v = el.value;
       if (k === 'read_location' && v === 'req') { VF.toast('Location can only be optional'); v = 'opt'; }

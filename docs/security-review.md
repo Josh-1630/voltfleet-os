@@ -24,10 +24,10 @@
 | A | No real sign-in: roles are chosen in the browser | Critical for production | **Fixed for real accounts** (Supabase Auth, server-set roles, private workspaces with RLS; see `docs/accounts.md`). The public demo stays open by design. |
 | B | Shared demo world is readable by anyone with the public key | High for production | **Resolved for customers:** real accounts work in private workspaces; the demo holds sample data only |
 | C | Device keys held in localStorage | Medium | Mitigated by CSP; fix with A |
-| D | OCPP password accepted in the URL (`?key=`) | Medium | Open: production setting |
+| D | OCPP password accepted in the URL (`?key=`) | Medium | Open: production setting. Set the `OCPP_ALLOW_QUERY_KEY=false` secret once real chargers connect (QA round 3) |
 | E | Edge Functions allow `http://localhost:8080` in CORS | Low | Open: one secret to set |
 | F | GitHub Actions pinned by tag, not commit SHA | Low | Open |
-| G | GitHub Pages can't send security headers | Low | Open: hosting choice |
+| G | GitHub Pages can't send security headers | Low | Open on GitHub Pages: hosting choice. `netlify.toml` sets them if the site moves to Netlify |
 
 ## Fixed in this release
 
@@ -101,6 +101,13 @@ Tested in the live database with temporary users, removed afterwards:
 The Supabase advisor's remaining warnings list functions that signed-in users may call by design; each checks the caller itself.
 
 **9 November 2026:** two-factor sign-in (TOTP) is now required for staff accounts and enforced in the database: RLS policies and server functions check the session's `aal2` level, tested with temporary users (removed afterwards). See `docs/accounts.md`.
+
+**17 November 2026 (QA round 3, `docs/qa/round-3.md`):**
+- Staff authenticators only count once confirmed from an emailed link, so a password alone can't reach the team's data (`20261117_mfa_trust.sql`).
+- Sign-ups, OCPP networks and Smartcar connections have per-person limits; anonymous traffic can't use up signed-in customers' allowance (`20261117_signup_limits.sql`, `20261117_edge_limits.sql`, both Edge Functions).
+- Team workspaces also record security events in the server's append-only audit log (`20261117_audit_events.sql`), and developer app secrets are no longer kept in the shared snapshot.
+- Fonts are served by the app itself, so Google no longer receives every visitor's IP address; the CSP no longer allows Google Fonts or `ws://localhost:8788`.
+- `netlify.toml` now publishes only the app files and sends the headers of item G, for when the site is served from Netlify.
 
 ## Open items and how to fix them
 

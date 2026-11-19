@@ -7,6 +7,24 @@
   const MIN = VF.MIN, HOUR = VF.HOUR, DAY = VF.DAY;
   const ui = VF.ui.admin = { roleFilter: 'all', q: '', revealed: {}, revealing: null, auditFilter: 'all', confirmReset: false };
   const me = () => VF.user(VF.session.userId);
+  // ---------------------------------------------------------------- retention (QA R3-08: the settings were shown but never applied)
+  const RET_LIMITS = { sessions: [30, 3650], eta: [0, 30], audit: [365, 3650], deletedAccount: [0, 90] };
+  VF.RET_LIMITS = RET_LIMITS;
+  let lastRetention = 0;
+  VF.applyRetention = function (force) {
+    const s = VF.state; const now = VF.now(); if (!s || !s.settings) return;
+    if (!force && now - lastRetention < VF.HOUR) return; lastRetention = now;
+    const days = (k) => { const lim = RET_LIMITS[k]; const v = Number(s.settings.retention && s.settings.retention[k]); return Number.isFinite(v) ? clamp(v, lim[0], lim[1]) : lim[1]; };
+    // Charging and billing records past their keep-until date (pseudonymous already; now gone).
+    const keep = now - days('sessions') * DAY;
+    if (s.sessions.some((x) => x.end < keep)) s.sessions = s.sessions.filter((x) => !(x.end < keep));
+    // Live arrival times are location-derived: kept only for a short time after the slot, then reduced to the slot.
+    const etaKeep = now - days('eta') * DAY;
+    for (const b of s.bookings) if (b.eta != null && b.eta !== b.start && (b.end || b.start) < etaKeep && b.status !== 'confirmed') b.eta = b.start;
+    const auditKeep = now - days('audit') * DAY;
+    if (s.audit.some((a) => a.t < auditKeep)) s.audit = s.audit.filter((a) => !(a.t < auditKeep));
+  };
+  VF.tickHooks = (VF.tickHooks || []).concat(() => VF.applyRetention());
 
   function stationCls(st) {
     if (st.status !== 'online') return 'off';
@@ -288,10 +306,22 @@
     'ad-reset-yes': () => { ui.confirmReset = false; VF.reset(); VF.session = { userId: 'u-admin' }; VF.save(); VF.rerender(); VF.toast('Demo data restored'); },
   });
   Object.assign(VF.CHG, {
-    'ad-ret': (el) => { const v = Number(el.value); if (v >= 0) { VF.state.settings.retention[el.dataset.k] = v; VF.audit(me().id, 'retention-change', `${el.dataset.k} = ${v} days`); VF.save(); VF.toast('Saved'); } },
+    // QA R3-08: an emptied field used to save 0 days (Number('') is 0), which with retention now enforced would
+    // delete every billing record. Each period has a legal or practical floor and ceiling.
+    'ad-ret': (el) => {
+      const k = el.dataset.k; const lim = RET_LIMITS[k]; const v = el.value.trim() === '' ? NaN : Number(el.value);
+      if (!lim || !Number.isInteger(v) || v < lim[0] || v > lim[1]) { VF.toast(lim ? `Enter whole days from ${lim[0]} to ${lim[1]}` : 'Unknown setting'); VF.rerender(); return; }
+      VF.state.settings.retention[k] = v; VF.audit(me().id, 'retention-change', `${k} = ${v} days`); VF.save(); VF.toast('Saved');
+    },
     'ad-k': (el) => { const v = clamp(Math.round(Number(el.value) || 3), 2, 20); VF.state.settings.kAnon = v; VF.save(); VF.toast('Saved'); },
     'ad-af': (el) => { ui.auditFilter = el.value; VF.rerender(); },
-    'ad-set': (el) => { const k = el.dataset.k; const v = k === 'currency' ? el.value.trim().toUpperCase() : Number(el.value); if (k === 'currency' ? v : !isNaN(v)) { VF.state.settings[k] = v; VF.save(); VF.toast('Saved'); } },
+    'ad-set': (el) => {
+      const k = el.dataset.k; const lim = { tz: [-12, 14], reserve: [5, 30] }[k];
+      const v = k === 'currency' ? el.value.trim().toUpperCase() : el.value.trim() === '' ? NaN : Number(el.value);
+      const okv = k === 'currency' ? /^[A-Z]{3}$/.test(v) : !!lim && Number.isFinite(v) && v >= lim[0] && v <= lim[1];
+      if (!okv) { VF.toast(k === 'currency' ? 'Use a 3-letter currency code, such as GHS' : `Enter a number from ${lim ? lim[0] : ''} to ${lim ? lim[1] : ''}`); VF.rerender(); return; }
+      VF.state.settings[k] = v; VF.save(); VF.toast('Saved');
+    },
   });
   Object.assign(VF.INP, { 'ad-q': (el) => { ui.q = el.value; VF.rerender(true); } });
 })();

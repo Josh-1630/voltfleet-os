@@ -8,8 +8,21 @@ const sql = postgres(Deno.env.get('SUPABASE_DB_URL')!, { prepare: false, max: 3,
 const ms = (t: Date | string | null) => (t ? new Date(t).getTime() : 0);
 
 const store: Store = {
-  async addState(hash) { await sql`insert into private.smartcar_states (state_hash) values (${hash})`; await sql`delete from private.smartcar_states where created_at < now() - interval '1 day'`; },
-  async pendingStates(sinceMs) { const [r] = await sql`select count(*)::int as n from private.smartcar_states where used_at is null and created_at > ${new Date(sinceMs)}`; return r.n; },
+  // created_by comes with migration 20261117_edge_limits.sql; until it is applied, fall back to the old behaviour.
+  async addState(hash, createdBy) {
+    try { await sql`insert into private.smartcar_states (state_hash, created_by) values (${hash}, ${createdBy ?? null})`; }
+    catch (e) { if ((e as any)?.code !== '42703') throw e; await sql`insert into private.smartcar_states (state_hash) values (${hash})`; }
+    await sql`delete from private.smartcar_states where created_at < now() - interval '1 day'`;
+  },
+  async pendingStates(sinceMs, who) {
+    if (!who) { const [r] = await sql`select count(*)::int as n from private.smartcar_states where used_at is null and created_at > ${new Date(sinceMs)}`; return r.n; }
+    try {
+      const [r] = who === 'anon'
+        ? await sql`select count(*)::int as n from private.smartcar_states where used_at is null and created_at > ${new Date(sinceMs)} and created_by is null`
+        : await sql`select count(*)::int as n from private.smartcar_states where used_at is null and created_at > ${new Date(sinceMs)} and created_by = ${who}`;
+      return r.n;
+    } catch (e) { if ((e as any)?.code === '42703') return null; throw e; }
+  },
   async takeState(hash, maxAgeMs) {
     const rows = await sql`update private.smartcar_states set used_at = now() where state_hash = ${hash} and used_at is null and created_at > now() - make_interval(secs => ${maxAgeMs / 1000}) returning created_at`;
     return rows.length ? { createdAt: ms(rows[0].created_at) } : null;

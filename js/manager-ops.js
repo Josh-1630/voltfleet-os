@@ -168,7 +168,7 @@
       </section>
       ${C.banner('teal', 'info', '<strong>Simulated delivery.</strong> Messages are composed and logged here but not sent. To send for real, add an SMS provider (for example Hubtel, mNotify or Arkesel in Ghana, Africa’s Talking across Africa) and the WhatsApp Business Platform on the server; API keys stay in server secrets, never in this app.')}
       <div class="dash">
-        ${C.card({ cls: 'span-7 flush', title: 'Who gets what', sub: 'In-app alerts always go to managers. Choose extra channels per alert.', action: `<label class="check"><input type="checkbox" data-chg="o-quiet" ${c.quiet.on ? 'checked' : ''}>Quiet hours ${c.quiet.from}:00–0${c.quiet.to}:00 (urgent alerts still go)</label>` }, C.table([
+        ${C.card({ cls: 'span-7 flush', title: 'Who gets what', sub: 'In-app alerts always go to managers. Choose extra channels per alert.', action: `<label class="check"><input type="checkbox" data-chg="o-quiet" ${c.quiet.on ? 'checked' : ''}>Quiet hours ${String(c.quiet.from).padStart(2, '0')}:00–${String(c.quiet.to).padStart(2, '0')}:00 (urgent alerts still go)</label>` }, C.table([
           { label: 'Alert', render: (r) => `<strong>${O.RULE_LABEL[r.k]}</strong>${r.crit ? ' <span class="badge bad">Urgent</span>' : ''}` },
           { label: 'To', render: (r) => (r.to === 'driver' ? 'Driver' : 'Manager') },
           { label: 'SMS', render: (r) => `<input type="checkbox" data-chg="o-rule" data-k="${r.k}" data-ch="sms" ${r.sms ? 'checked' : ''} aria-label="SMS for ${O.RULE_LABEL[r.k]}">` },
@@ -242,9 +242,9 @@
     'o-jobs-reset': re(() => { O.cfg().jobs = {}; VF.toast('Back to sample jobs'); }),
   });
   Object.assign(VF.CHG, {
-    'o-rule': (el) => { O.cfg().rules[el.dataset.k][el.dataset.ch] = el.checked; save(); VF.rerender(); },
+    'o-rule': (el) => { const r = Object.prototype.hasOwnProperty.call(O.cfg().rules, el.dataset.k) && O.cfg().rules[el.dataset.k]; if (!r || !['sms', 'wa'].includes(el.dataset.ch)) return; r[el.dataset.ch] = el.checked; save(); VF.rerender(); },
     'o-quiet': (el) => { O.cfg().quiet.on = el.checked; save(); VF.rerender(); },
-    'o-lang': (el) => { O.cfg().lang[el.dataset.id] = el.value; save(); VF.toast('Language saved'); VF.rerender(); },
+    'o-lang': (el) => { if (!Object.prototype.hasOwnProperty.call(O.LANGS, el.value) || !F().drivers.some((d) => d.id === el.dataset.id)) return; O.cfg().lang[el.dataset.id] = el.value; save(); VF.toast('Language saved'); VF.rerender(); },
     'o-tpl': (el) => { ui.tplType = el.value; VF.rerender(); },
   });
 })();

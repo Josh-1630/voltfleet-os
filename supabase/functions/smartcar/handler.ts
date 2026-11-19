@@ -13,10 +13,15 @@
 export const SC_IAM = 'https://iam.smartcar.com/oauth2/token';
 export const SC_API = 'https://vehicle.api.smartcar.com/v3';
 const CACHE_MS = 60_000, FORCE_MS = 15_000, STATE_MS = 30 * 60_000;
+// Connect-flow limits per hour (QA R1-08): signed-in people have their own allowance, anonymous requests (the public
+// demo) share a pool, so anonymous traffic can't lock out signed-in customers; the global ceiling is a circuit breaker.
+export const LIMITS = { perUser: 20, anon: 300, global: 1000, legacy: 500 };
 
 export interface Store {
-  addState(hash: string): Promise<void>;
-  pendingStates(sinceMs: number): Promise<number>;
+  addState(hash: string, createdBy?: string | null): Promise<void>;
+  // With `who`, count only that signed-in user's pending states ('anon': only anonymous ones). Returns null when the
+  // database can't tell (migration 20261117_edge_limits.sql not applied yet): the old global limit applies then.
+  pendingStates(sinceMs: number, who?: string): Promise<number | null>;
   takeState(hash: string, maxAgeMs: number): Promise<{ createdAt: number } | null>;
   addLink(keyHash: string, userId: string): Promise<void>;
   findLink(keyHash: string): Promise<{ userId: string } | null>;
@@ -170,6 +175,24 @@ async function readVehicles(d: Deps, userId: string, force: boolean) {
   return out;
 }
 
+// The Supabase user behind "Authorization: Bearer <access token>", checked with the project's own Auth server.
+// Anything else (no header, the publishable key, an expired or forged token) is anonymous.
+export async function sessionUser(req: Request, fetchFn: typeof fetch, env: (k: string) => string | undefined): Promise<string | null> {
+  const m = /^Bearer\s+([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)$/i.exec(req.headers.get('authorization') || '');
+  const base = env('SUPABASE_URL'); const key = env('SUPABASE_ANON_KEY') || req.headers.get('apikey') || '';
+  if (!m || !base || !key) return null;
+  try {
+    const p = JSON.parse(atob(m[1].split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+    if (!p || p.role !== 'authenticated' || typeof p.sub !== 'string') return null; // publishable/anon keys: skip the round trip
+  } catch { return null; }
+  try {
+    const r = await fetchFn(base.replace(/\/$/, '') + '/auth/v1/user', { headers: { Authorization: 'Bearer ' + m[1], apikey: key } });
+    if (!r.ok) return null;
+    const u = await r.json();
+    return u && typeof u.id === 'string' && /^[0-9a-f-]{36}$/i.test(u.id) ? u.id : null;
+  } catch { return null; }
+}
+
 // ---------------------------------------------------------------- request handler
 export async function handle(req: Request, d: Deps): Promise<Response> {
   const allowed = (d.env('ALLOWED_ORIGINS') || 'https://josh-1630.github.io,https://voltfleetos.com,https://www.voltfleetos.com,http://localhost:8080').split(',').map((s) => s.trim());
@@ -186,9 +209,13 @@ export async function handle(req: Request, d: Deps): Promise<Response> {
         return reply(200, { configured });
       case 'start': {
         if (!configured) throw new HttpError(503, 'Smartcar is not configured on the server yet.');
-        if (await d.store.pendingStates(d.now() - 60 * 60_000) > 500) throw new HttpError(429, 'Too many connection attempts. Try again later.');
+        const since = d.now() - 60 * 60_000; const who = await sessionUser(req, d.fetch, d.env);
+        const mine = await d.store.pendingStates(since, who || 'anon');
+        if (mine === null) { if (((await d.store.pendingStates(since)) as number) > LIMITS.legacy) throw new HttpError(429, 'Too many connection attempts. Try again later.'); }
+        else if (mine >= (who ? LIMITS.perUser : LIMITS.anon)) throw new HttpError(429, who ? 'You’ve started many vehicle connections in the last hour. Finish one, or try again later.' : 'Too many connection attempts right now. Sign in to connect a vehicle, or try again later.');
+        else if (((await d.store.pendingStates(since)) as number) >= LIMITS.global) throw new HttpError(429, 'Too many connection attempts. Try again later.');
         const state = randomToken(24);
-        await d.store.addState(await sha256(state));
+        await d.store.addState(await sha256(state), who);
         return reply(200, { state });
       }
       case 'link': {

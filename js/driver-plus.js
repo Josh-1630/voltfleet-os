@@ -102,7 +102,7 @@
     const st = VF.station(id); if (!st || !VF.ops) return '';
     const now = VF.now(); const ps = Array.from({ length: 8 }, (_, i) => VF.ops.outageP(st.id, now + i * HOUR)); const worst = Math.max(...ps); const at = now + ps.indexOf(worst) * HOUR;
     return `<div class="sheet-extra"><div class="row between"><strong class="small">Grid power here</strong><span class="small ${worst > 0.08 ? 'text-warn' : 'text-ok'}">${worst > 0.08 ? `Outage risk peaks ${VF.fmtTime(at)}` : 'Usually reliable next 8 h'}</span></div>
-      <div class="risk-bar">${ps.map((p, i) => `<i style="--p:${clamp(p * 6, 0.06, 1).toFixed(2)}" title="${VF.fmtTime(now + i * HOUR)}"></i>`).join('')}</div>
+      <div class="risk-bar" role="img" aria-label="${esc(worst > 0.08 ? `Outage risk over the next 8 hours peaks around ${VF.fmtTime(at)}` : 'Low outage risk over the next 8 hours')}">${ps.map((p, i) => `<i style="--p:${clamp(p * 6, 0.06, 1).toFixed(2)}" title="${VF.fmtTime(now + i * HOUR)}"></i>`).join('')}</div>
       <button class="btn small ghost" data-act="d-report" data-id="${esc(st.id)}">${icon('triangle-alert')}Report a problem</button></div>`;
   }
   const ISSUES = ['Charger not working', 'Cable or plug damaged', 'Bay blocked by a non-EV car', 'Payment failed', 'Other'];
@@ -142,22 +142,27 @@
     },
     'd-precool': () => {
       const { d } = ctx(); const dep = VF.startOfDay(VF.now()) + DAY + 7 * HOUR;
-      C.modal({ title: 'Pre-cool the cabin', submitLabel: 'Schedule', body: C.field('Ready by', C.select('at', [6, 6.5, 7, 7.5, 8, 9].map((h) => [dep - 7 * HOUR + h * HOUR, `${String(Math.floor(h)).padStart(2, '0')}:${h % 1 ? '30' : '00'} tomorrow`]), dep)) + '<p class="small muted">Runs on grid power for 15 minutes before you leave, if the car is plugged in.</p>',
-        onSubmit(f) { d.precool = { at: +f.at }; VF.save(); VF.toast('Pre-cool scheduled'); VF.rerender(); return null; } });
+      const opts = [6, 6.5, 7, 7.5, 8, 9].map((h) => [dep - 7 * HOUR + h * HOUR, `${String(Math.floor(h)).padStart(2, '0')}:${h % 1 ? '30' : '00'} tomorrow`]);
+      C.modal({ title: 'Pre-cool the cabin', submitLabel: 'Schedule', body: C.field('Ready by', C.select('at', opts, dep)) + '<p class="small muted">Runs on grid power for 15 minutes before you leave, if the car is plugged in.</p>',
+        onSubmit(f) { const at = +f.at; if (!opts.some(([t]) => t === at)) return 'Choose a time.'; d.precool = { at }; VF.save(); VF.toast('Pre-cool scheduled'); VF.rerender(); return null; } });
     },
     'd-precool-off': () => { const { d } = ctx(); d.precool = null; VF.save(); VF.rerender(); },
     'd-rescue': async () => {
-      const { u, d } = ctx();
+      const { u, d, v } = ctx();
+      // One rescue at a time, and only when the car really needs one (QA R3-03: a second tap charged the fee twice).
+      if (d.rescue && d.rescue.status !== 'done') { VF.toast('A rescue van is already on its way'); return; }
+      if (!(v.status === 'stranded' || v.soc < 10)) { VF.toast('Roadside help is for an empty or nearly empty battery'); return; }
       if (!await C.confirm({ title: 'Request roadside help?', icon: 'truck', confirmLabel: 'Share location and request', body: `A rescue van with a mobile charger comes to you. Your live location is shared with the rescue team only, and only until they arrive. About ${money(150, 0)} from your wallet.` })) return;
+      if (d.rescue && d.rescue.status !== 'done') return; // requested from another tab meanwhile
       const ref = 'RS-' + String(Math.floor(1000 + Math.random() * 9000)); const fee = 150;
       d.rescue = { t: VF.now(), eta: VF.now() + (25 + Math.floor(Math.random() * 20)) * MIN, status: 'en route', ref, fee, loc: 'shared' };
       wallet(d, u).tx.unshift({ id: 'wt' + (++VF.state.seq), t: VF.now(), kind: 'rescue', amount: fee, ref, note: 'Roadside rescue ' + ref });
       VF.notify(d.id, 'Rescue van on its way', `Reference ${ref}. Stay with your car if it's safe.`); VF.save(); VF.rerender();
     },
-    'd-rescue-cancel': () => { const { u, d } = ctx(); if (!d.rescue) return; const w = wallet(d, u); w.tx = w.tx.filter((x) => x.ref !== d.rescue.ref); d.rescue = null; VF.save(); VF.toast('Rescue cancelled · refunded'); VF.rerender(); },
+    'd-rescue-cancel': () => { const { u, d } = ctx(); if (!d.rescue || d.rescue.status === 'done') return; /* a finished rescue isn't refunded */ const w = wallet(d, u); w.tx = w.tx.filter((x) => x.ref !== d.rescue.ref); d.rescue = null; VF.save(); VF.toast('Rescue cancelled · refunded'); VF.rerender(); },
     'd-report': (el) => {
       const st = VF.station(el.dataset.id); if (!st) return;
-      C.modal({ title: `Report a problem at ${st.name}`, sub: 'The operator sees the issue and your booking code, never your name or number.', submitLabel: 'Send report', body: `${C.field('What’s wrong?', C.select('issue', ISSUES, ISSUES[0]))}${C.field('Details (optional)', '<textarea class="input" name="note" rows="3" maxlength="200"></textarea>')}`,
+      C.modal({ title: `Report a problem at ${st.name}`, sub: 'The operator sees the station, the issue and what you write here, never your name or number.', submitLabel: 'Send report', body: `${C.field('What’s wrong?', C.select('issue', ISSUES, ISSUES[0]))}${C.field('Details (optional)', '<textarea class="input" name="note" rows="3" maxlength="200"></textarea>')}`,
         onSubmit(f) {
           if (!ISSUES.includes(f.issue)) return 'Choose an issue.';
           const note = String(f.note || '').replace(/[\u0000-\u001f<>]/g, ' ').trim().slice(0, 200);
