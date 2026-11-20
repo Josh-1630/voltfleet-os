@@ -241,6 +241,7 @@
     // QA R4-01: cars connected in this account are disconnected and their readings (location included) removed from
     // this browser first, while the account is still the one they belong to.
     try { if (VF.real && VF.real.signOut) await VF.real.signOut(); } catch (e) { /* removed locally anyway */ }
+    try { if (VF.ocppNet && VF.ocppNet.wipeAccounts) VF.ocppNet.wipeAccounts(); } catch (e) { /* removed on reload anyway */ }
     try { await sb.auth.signOut({ scope: everywhere ? 'global' : 'local' }); } catch (e) { /* signed out locally anyway */ }
     // Shared devices: remove this account's workspace copy from the browser.
     try { for (const k of Object.keys(localStorage)) if (k.startsWith(ORG_PREFIX)) localStorage.removeItem(k); } catch (e) { /* none */ }

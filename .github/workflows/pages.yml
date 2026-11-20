@@ -1,22 +1,75 @@
-name: Deploy to GitHub Pages
+name: Test and deploy to GitHub Pages
 
 on:
   push:
     branches: [main]
+  pull_request:
   workflow_dispatch:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
-  group: pages
+  group: pages-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  deploy:
+  # The regression suite from QA rounds 1-4 (tests/README.md). Nothing is deployed unless it passes.
+  test:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PGHOST: localhost
+      PGUSER: postgres
+      PGPASSWORD: postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # The tests must never reach the live project or third-party services: demo mode would otherwise push test data
+      # to the live demo world. Blocking these hosts also matches how the suite was verified (offline sandbox).
+      - name: Block external services
+        run: |
+          for h in kwxadepnkyxgspvvqbzo.supabase.co a.basemaps.cartocdn.com b.basemaps.cartocdn.com c.basemaps.cartocdn.com \
+                   d.basemaps.cartocdn.com api.mapbox.com api.maptiler.com api.open-meteo.com en.wikipedia.org \
+                   upload.wikimedia.org router.project-osrm.org tile.openstreetmap.org challenges.cloudflare.com \
+                   js.hcaptcha.com hcaptcha.com connect.smartcar.com fonts.googleapis.com fonts.gstatic.com; do
+            echo "0.0.0.0 $h" | sudo tee -a /etc/hosts >/dev/null
+          done
+      - name: Install test tools
+        working-directory: tests
+        run: |
+          npm ci --ignore-scripts
+          npx playwright install --with-deps chromium
+      - name: Install psql
+        run: sudo apt-get install -y postgresql-client >/dev/null
+      - name: Run the regression suite
+        run: node tests/run.cjs --sql
+      - name: Keep the logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-logs
+          path: tests/out
+          retention-days: 7
+
+  deploy:
+    needs: test
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -25,7 +78,7 @@ jobs:
       - uses: actions/configure-pages@v5
         with:
           enablement: true
-      # Publish only the app itself: docs, database migrations, Edge Functions and tools stay in the repository
+      # Publish only the app itself: docs, database migrations, Edge Functions, tests and tools stay in the repository
       # but are not served from the website (QA R2-08).
       - name: Stage site files
         run: |

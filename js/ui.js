@@ -223,11 +223,38 @@
     if (e.target.getAttribute('id') !== 'dlg-form' || !formHandler) return;
     e.preventDefault();
     const data = Object.fromEntries(new FormData(e.target).entries());
-    const err = formHandler(data, e.target);
+    const err = C.checkForm(e.target) || formHandler(data, e.target);
     if (err) { const box = document.getElementById('dlg-error'); box.hidden = false; box.innerHTML = `${VF.icon('triangle-alert')}<span>${esc(err)}</span>`; return; }
     C.closeDialog();
   });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !dialogEl().hidden) { if (dialogResolve) finish(false); else C.closeDialog(); } });
+
+  // Hardening pass: dialogs use novalidate (for friendlier messages), so nothing enforced the limits each field declares;
+  // every handler re-checked by hand and some missed one (QA R3, R4-06, R4-08). Now every form is held to its own
+  // required / maxlength / min / max / step="1" / pattern / list options before its handler runs. Returns a message or null.
+  C.checkForm = (form) => {
+    for (const el of form.elements) {
+      if (!el.name || el.disabled || /^(hidden|submit|button|checkbox|radio|file)$/.test(el.type)) continue;
+      const span = el.closest('.field') && el.closest('.field').querySelector(':scope > span');
+      const label = ((span && span.textContent) || el.getAttribute('aria-label') || el.name).trim();
+      const v = String(el.value == null ? '' : el.value); const t = v.trim();
+      if (el.tagName === 'SELECT') {
+        if ((t || el.required) && ![...el.options].some((o) => o.value === v && !o.disabled)) return `Choose ${label} from the list.`;
+        continue;
+      }
+      if (el.required && !t) return `Fill in ${label}.`;
+      const ml = el.getAttribute('maxlength'); if (ml && v.length > +ml) return `${label}: use at most ${ml} characters.`;
+      if (el.type === 'number' && t !== '') {
+        const n = Number(t); if (!Number.isFinite(n)) return `${label}: enter a number.`;
+        const mn = el.getAttribute('min'), mx = el.getAttribute('max'); const hasMin = mn !== null && mn !== '', hasMax = mx !== null && mx !== '';
+        if ((hasMin && n < +mn) || (hasMax && n > +mx)) return hasMin && hasMax ? `${label} must be between ${mn} and ${mx}.` : hasMin ? `${label} must be at least ${mn}.` : `${label} must be at most ${mx}.`;
+        if (el.getAttribute('step') === '1' && !Number.isInteger(n)) return `${label}: enter a whole number.`;
+      }
+      const pat = el.getAttribute('pattern');
+      if (pat && t) { let ok = true; try { ok = new RegExp('^(?:' + pat + ')$', 'u').test(t); } catch (e) { ok = true; } if (!ok) return `${label} isn’t in the expected format.`; }
+    }
+    return null;
+  };
 
   // Field helpers for forms
   C.field = (label, input, hint) => `<label class="field"><span>${esc(label)}</span>${input}${hint ? `<small class="faint">${esc(hint)}</small>` : ''}</label>`;

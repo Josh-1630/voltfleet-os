@@ -1,0 +1,13 @@
+{
+  "name": "voltfleet-os-tests",
+  "private": true,
+  "description": "Regression suite from QA rounds 1-4. Run from the repository root: node tests/run.cjs (see tests/README.md).",
+  "scripts": {
+    "test": "node run.cjs",
+    "test:all": "node run.cjs --sql"
+  },
+  "devDependencies": {
+    "axe-core": "4.10.2",
+    "playwright": "1.63.0"
+  }
+}

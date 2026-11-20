@@ -88,13 +88,26 @@ Every device that opens the demo shares one live world, stored in Supabase (proj
 python3 -m http.server 8080   # then open http://localhost:8080
 ```
 
+## Tests
+
+The regression suite from QA rounds 1–4 lives in `tests/` (38 test files plus the database suite, 400+ explicit checks: accounts and two-factor
+sign-in, sync conflicts, XSS and CSP, accessibility, privacy at sign-out, retention, bad data, both Edge Functions,
+every database migration). GitHub Actions runs it on every push and pull request, and the site is only deployed when it
+passes. See `tests/README.md`.
+
+```
+cd tests && npm ci && npx playwright install chromium && cd ..
+node tests/run.cjs          # add --sql for the database tests (needs Postgres)
+```
+
 ## Deploy
 
 No build step. Upload this folder to any static host:
 
 - **Netlify:** drag the folder onto https://app.netlify.com/drop (`netlify.toml` is included)
 - **Vercel:** `npx vercel`, framework "Other"
-- **Cloudflare Pages / GitHub Pages:** deploy the folder root
+- **Cloudflare Pages / GitHub Pages:** deploy the folder root. GitHub Pages deploys from `.github/workflows/pages.yml`
+  after the test suite passes.
 
 ## Files
 

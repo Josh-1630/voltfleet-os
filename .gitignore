@@ -1,2 +1,4 @@
 voltfleet-os.zip
 .DS_Store
+tests/out/
+tests/node_modules/

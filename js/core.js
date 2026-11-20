@@ -223,7 +223,7 @@ window.VF = (function () {
     { id: 'Any other EV', method: 'Universal OBD-II dongle, or manual entry', auth: 'Device pairing', cov: [1, 1, 1, 2, 1, 2, 0, 1, 0], status: 'available' },
   ];
   VF.MODELS = MODELS; VF.CONNECTOR_TYPES = CONNECTOR_TYPES; VF.OEMS = OEMS; VF.TELEMETRY_FIELDS = TELEMETRY_FIELDS;
-  VF.model = (v) => MODELS[v.model] || MODELS['BYD Atto 3'];
+  VF.model = (v) => (v && Object.prototype.hasOwnProperty.call(MODELS, v.model) ? MODELS[v.model] : MODELS['BYD Atto 3']);
   VF.isDC = (type) => !!CONNECTOR_TYPES[type];
   VF.compatible = (m, type) => m.ports.includes(type);
   VF.sessionMaxKw = (conn, m) => (VF.isDC(conn.type) ? Math.min(conn.kw, m.dc) : Math.min(conn.kw, m.ac));
@@ -955,6 +955,19 @@ window.VF = (function () {
     return `<div class="soc"><div class="soc-bar"><i class="${cls}" style="width:${clamp(soc, 0, 100).toFixed(1)}%"></i>${marker != null ? `<b style="left:${clamp(marker, 0, 100).toFixed(1)}%"></b>` : ''}</div><span class="num">${Math.round(soc)}%</span></div>`;
   };
   VF.kpi = (label, value, small, hint, cls) => `<div class="kpi"><div class="label">${label}</div><div class="value">${value}${small ? `<small>${small}</small>` : ''}</div><div class="hint ${cls || ''}">${hint || ''}</div></div>`;
+  // Hardening pass: run fn(...args) so that a failure stays contained. If it throws (or its promise rejects), the error
+  // is raised again on its own, so it still reaches the console, error monitoring and the test suite, and the caller
+  // carries on: the next action, the next simulation step and the save still happen. The person sees one short message.
+  VF.raise = (e) => { setTimeout(() => { throw e; }, 0); };
+  VF.safely = (fn, ...args) => {
+    try { const r = fn(...args); if (r && typeof r.then === 'function') r.then(null, VF.raise); return r; } catch (e) { VF.raise(e); return undefined; }
+  };
+  let lastOops = 0;
+  window.addEventListener('error', (ev) => {
+    if (!ev.filename || !ev.filename.startsWith(location.origin)) return; // extensions, cross-origin scripts
+    const t = Date.now(); if (t - lastOops < 8000) return; lastOops = t;
+    try { VF.toast('Something went wrong. Your last change may not have been saved, so check it and try again.'); } catch (e) { /* no UI yet */ }
+  });
   VF.toast = (msg) => {
     const t = document.createElement('div'); t.className = 'toast'; t.textContent = msg;
     $('#toasts').appendChild(t); setTimeout(() => t.remove(), 4000);

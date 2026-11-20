@@ -1,0 +1,23 @@
+\set ON_ERROR_STOP 0
+set role anon;
+select 'first tick' t, public.world_tick('demo','cA',0,'gz:one');
+select 'tick no expected' t, public.world_tick('demo','cA',null,'gz:x');
+select 'tick too fast' t, public.world_tick('demo','cA',1,'gz:x');
+select 'push ok @1' t, public.world_push('demo','gz:two',1);
+select pg_sleep(0.15);
+select 'push stale @1' t, public.world_push('demo','gz:three',1);
+select 'legacy push (no expected)' t, public.world_push('demo','gz:legacy');
+select pg_sleep(1);
+select 'other client stale, lease held by cA' t, public.world_tick('demo','cB',0,'gz:x');
+select 'holder stale (no lease change)' t, public.world_tick('demo','cA',0,'gz:x');
+reset role;
+select 'row' t, rev, state_gz, leader_id from public.worlds;
+update public.worlds set leader_at = now() - interval '7 seconds';
+set role anon;
+select 'lease expired, stale cB -> no lease' t, public.world_tick('demo','cB',0,'gz:x');
+reset role; select 'leader after stale' t, leader_id, leader_at < now() - interval '6 seconds' lapsed from public.worlds; set role anon;
+select 'cB correct rev takes over' t, public.world_tick('demo','cB',3,'gz:b');
+select 'oversize' t, public.world_push('demo','gz:'||repeat('a',750001),4);
+select 'org push as anon' t, public.org_world_push('gz:x', 0);
+reset role;
+select 'grants' t, has_function_privilege('anon','public.world_push(text,text,bigint)','execute') anon_push, has_function_privilege('anon','public.org_world_push(text,bigint)','execute') anon_org_push, has_function_privilege('authenticated','public.org_world_push(text,bigint)','execute') auth_org_push, has_function_privilege('anon','public.org_world_tick(text,bigint,text)','execute') anon_org_tick;

@@ -131,7 +131,7 @@ The Supabase advisor's remaining warnings list functions that signed-in users ma
 
 **B. Public demo data.** Until A is done, anything typed into the demo is readable by anyone with the public key. The sign-in page now warns about this. Don't use the demo with real drivers' data.
 
-**C. Keys in browser storage.** The Smartcar device key and the OCPP network key sit in `localStorage`, where an XSS bug could read them. The CSP makes that much harder. Since QA round 4 they are kept per account and the Smartcar key is removed at sign-out. The OCPP key isn't removed, because only its hash exists on the server; a server action that reissues it to the network's creator would allow that. With A, move them to HttpOnly, Secure, SameSite cookies or server-side sessions.
+**C. Keys in browser storage.** The Smartcar device key and the OCPP network key sit in `localStorage`, where an XSS bug could read them. The CSP makes that much harder. Since QA round 4 they are kept per account and the Smartcar key is removed at sign-out. Since the hardening pass (November 2026) the OCPP key is removed at sign-out too: the network's creator signs in and gets a new key (`reissueKey` in the `ocpp` function), which also cuts off the old key everywhere. With A, move them to HttpOnly, Secure, SameSite cookies or server-side sessions.
 
 **D. OCPP password in the URL.** `?key=` exists because browsers can't send WebSocket auth headers (the in-app charger simulator needs it). Real chargers should use HTTP Basic auth (OCPP security profile 1 or 2) over TLS, or client certificates (profile 3). Add an `OCPP_ALLOW_QUERY_KEY=false` setting for production so passwords never appear in access logs.
 

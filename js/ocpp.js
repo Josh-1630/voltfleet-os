@@ -13,8 +13,9 @@
   const STORE = 'voltfleet-os:ocpp', PW = 'voltfleet-os:ocpp-pw';
   const O = VF.ocppNet = { fn: FN, ws: WS, key: null, name: '', data: null, error: '', lastPoll: 0, polling: false, sim: null, simLog: [], simCp: '', simState: 'offline' };
   // QA R4-01: a network key belongs to the account (or the demo) that created it on this browser. Another account, or
-  // the demo, on the same browser never loads it. It isn't wiped at sign-out because it can't be recovered (only a hash
-  // is kept on the server). The top-level fields keep the demo's key for app versions cached before this change.
+  // the demo, on the same browser never loads it. Hardening pass: signing out now also removes the account's keys from
+  // the browser, because the creator can get a new key back after signing in ("Recover a network you created").
+  // The top-level fields keep the demo's key for app versions cached before this change.
   const owner = () => (VF.mode === 'account' && VF.auth && VF.auth.account && VF.auth.account.id ? 'acct:' + VF.auth.account.id : 'demo');
   let byOwner = {}; O.owner = null;
   try { const s = JSON.parse(localStorage.getItem(STORE) || 'null'); if (s && typeof s === 'object') byOwner = s.byOwner && typeof s.byOwner === 'object' && !Array.isArray(s.byOwner) ? s.byOwner : s.key ? { demo: { key: s.key, name: s.name || '' } } : {}; } catch (e) { /* none */ }
@@ -29,6 +30,7 @@
     const demo = byOwner.demo || {};
     try { if (Object.keys(byOwner).length) localStorage.setItem(STORE, JSON.stringify({ byOwner, key: demo.key || null, name: demo.name || '' })); else localStorage.removeItem(STORE); } catch (e) { /* blocked */ }
   };
+  O.wipeAccounts = () => { for (const k of Object.keys(byOwner)) if (k.startsWith('acct:')) delete byOwner[k]; if (O.owner && O.owner.startsWith('acct:')) { O.key = null; O.data = null; } O.owner = null; persist(); };
   // Charger passwords are shown once; this tab remembers them only so the simulator can use them.
   const pwGet = (id) => { try { return JSON.parse(sessionStorage.getItem(PW) || '{}')[id] || ''; } catch (e) { return ''; } };
   const pwSet = (id, pw) => { try { const m = JSON.parse(sessionStorage.getItem(PW) || '{}'); m[id] = pw; sessionStorage.setItem(PW, JSON.stringify(m)); } catch (e) { /* not kept */ } };
@@ -36,7 +38,7 @@
   async function call(action, body) {
     if (!FN) throw new Error('Cloud functions are not configured (js/config.js).');
     // Signed in: say who is asking, only for the action with a per-person limit (QA R1-08). The demo stays anonymous.
-    const who = action === 'createNetwork' && VF.auth && VF.auth.bearer ? VF.auth.bearer() : null;
+    const who = ['createNetwork', 'myNetworks', 'reissueKey'].includes(action) && VF.auth && VF.auth.bearer ? VF.auth.bearer() : null;
     const r = await fetch(FN, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(cloud.key ? { apikey: cloud.key } : {}), ...(who ? { Authorization: who } : {}) }, body: JSON.stringify({ action, ...(body || {}) }) });
     let j = null; try { j = await r.json(); } catch (e) { /* not JSON */ }
     if (!r.ok) { const err = new Error((j && j.error) || `Request failed (${r.status})`); err.status = r.status; throw err; }
@@ -84,7 +86,7 @@
           <li>${icon('sliders-horizontal')}<span>Start and stop sessions remotely, unlock cables, reset, take connectors out of service and cap power (smart charging).</span></li>
           <li>${icon('shield-check')}<span>Real charger data stays in this network. It is not shared with the demo or other operators, and card numbers are masked.</span></li>
         </ul>
-        <div class="card-actions"><button class="btn primary" data-act="oc-create">${icon('plus')}Create charging network</button><button class="btn" data-act="oc-import">${icon('key')}Use an access key</button></div>`)}
+        <div class="card-actions"><button class="btn primary" data-act="oc-create">${icon('plus')}Create charging network</button><button class="btn" data-act="oc-import">${icon('key')}Use an access key</button>${VF.mode === 'account' ? `<button class="btn" data-act="oc-recover">${icon('rotate-ccw')}Recover a network you created</button>` : ''}</div>`)}
       ${C.card({ cls: 'span-4', title: 'No charger yet?' }, `<p class="small muted">After creating the network, add a charger and press <strong>Start simulated charger</strong>. It connects to the central system exactly like hardware and responds to every command.</p>`)}</div>`;
   }
   function chargerCard(cp) {
@@ -224,6 +226,18 @@
     'oc-forget': async () => {
       if (!await C.confirm({ title: 'Remove the network from this device?', body: 'Chargers keep running and stay connected. You need the access key to manage them again.', confirmLabel: 'Remove', danger: true })) return;
       if (O.sim) { O.sim.stop(); O.sim = null; } O.key = null; O.data = null; persist(); VF.rerender();
+    },
+    // Hardening pass: the creator gets a new key after signing in (sign-out removes keys from the browser). The old key
+    // stops working everywhere at once, so this is also how to cut off a leaked or shared key.
+    'oc-recover': async () => {
+      let nets; try { nets = (await call('myNetworks')).networks || []; } catch (e) { VF.toast(e.message); return; }
+      if (!nets.length) { VF.toast('You haven’t created a charging network with this account.'); return; }
+      C.modal({ title: 'Get a new access key', sub: 'For a network you created with this account. The old key stops working at once, on every device that has it. Share the new one again with the people who run the chargers.', submitLabel: 'Issue new key',
+        body: C.field('Network', C.select('networkId', nets.map((n) => [n.id, `${n.name} · created ${VF.fmtDate ? VF.fmtDate(n.createdAt) : new Date(n.createdAt).toLocaleDateString()}`]), nets[0].id, 'required')),
+        onSubmit(d) {
+          call('reissueKey', { networkId: d.networkId }).then((r) => { if (O.sim) { O.sim.stop(); O.sim = null; } O.key = r.networkKey; O.name = r.name; O.data = null; persist(); VF.toast('New access key issued. The old key no longer works.'); O.poll().then(() => VF.rerender()); }, (e) => VF.toast(e.message));
+          return null;
+        } });
     },
     'oc-copy': (el) => { try { navigator.clipboard.writeText(el.dataset.v).then(() => VF.toast('Copied'), () => VF.toast('Copy blocked: select and copy the text')); } catch (e) { VF.toast('Copy blocked: select and copy the text'); } },
     'oc-add': () => C.modal({ title: 'Add a charger', sub: 'Register the charger, then enter its connection details in the charger’s settings.', submitLabel: 'Add charger', body: `<div class="form-grid-2">

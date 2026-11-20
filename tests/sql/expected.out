@@ -1,0 +1,153 @@
+== test_sync.sql
+     t      |               world_tick               
+------------+----------------------------------------
+ first tick | {"ok": true, "rev": 1, "leader": true}
+(1 row)
+ERROR:  expected revision required
+       t       |                          world_tick                           
+---------------+---------------------------------------------------------------
+ tick too fast | {"ok": false, "rev": 1, "leader": true, "reason": "too_fast"}
+(1 row)
+ERROR:  too many writes, slow down
+ pg_sleep 
+----------
+ 
+(1 row)
+       t       |       world_push       
+---------------+------------------------
+ push stale @1 | {"ok": true, "rev": 2}
+(1 row)
+ERROR:  too many writes, slow down
+ pg_sleep 
+----------
+ 
+(1 row)
+                  t                   |                            world_tick                            
+--------------------------------------+------------------------------------------------------------------
+ other client stale, lease held by cA | {"ok": false, "rev": 2, "leader": false, "reason": "not_leader"}
+(1 row)
+               t                |                         world_tick                         
+--------------------------------+------------------------------------------------------------
+ holder stale (no lease change) | {"ok": false, "rev": 2, "leader": true, "reason": "stale"}
+(1 row)
+  t  | rev | state_gz | leader_id 
+-----+-----+----------+-----------
+ row |   2 | gz:three | cA
+(1 row)
+                  t                  |                         world_tick                          
+-------------------------------------+-------------------------------------------------------------
+ lease expired, stale cB -> no lease | {"ok": false, "rev": 2, "leader": false, "reason": "stale"}
+(1 row)
+         t          | leader_id | lapsed 
+--------------------+-----------+--------
+ leader after stale | cA        | t
+(1 row)
+             t             |                         world_tick                          
+---------------------------+-------------------------------------------------------------
+ cB correct rev takes over | {"ok": false, "rev": 2, "leader": false, "reason": "stale"}
+(1 row)
+ERROR:  state missing, too large or malformed
+ERROR:  permission denied for function org_world_push
+   t    | anon_push | anon_org_push | auth_org_push | anon_org_tick 
+--------+-----------+---------------+---------------+---------------
+ grants | t         | f             | t             | f
+(1 row)
+== test_invites.sql
+owner signup: ready
+invite victim: 1
+invite colleague: 2
+victim signup status (no auto-join): invited org=none
+victim sees invites: Owner Fleet
+victim declines -> own org: Rival Fleet
+colleague status: invited
+colleague accepts: Owner Fleet role=pending
+ERROR:  You already belong to an organisation. Leave it first.
+ERROR:  The organisation’s owner can’t be removed.
+colleague leaves: pending
+expired invite offered? 0
+owner flag: true invites listed: [{"id": "<uuid>", "role": "manager", "email": "victim@rival.example", "expired": false, "declined": true, "created_at": "<time>", "expires_at": "<time>"}, {"id": "<uuid>", "role": "manager", "email": "colleague@fleet.example", "expired": true, "declined": false, "created_at": "<time>", "expires_at": "<time>"}]
+ERROR:  You own this organisation, so you can’t leave it. Delete your account instead, or ask support to transfer ownership.
+grants: anon accept=false auth org_owner=false
+== test_r3.sql
+NOTICE:  plus-address 1 -> Ama 1
+NOTICE:  plus-address 2 -> Ama 2
+NOTICE:  plus-address 3 -> Ama 3
+NOTICE:  plus-address 4 -> REFUSED: Too many sign-ups from this email address. Try again in an hour.
+NOTICE:  plus-address 5 -> REFUSED: Too many sign-ups from this email address. Try again in an hour.
+NOTICE:  gmail dot variant -> REFUSED: Too many sign-ups from this email address. Try again in an hour.
+NOTICE:  other gmail user -> Kofi
+NOTICE:  catch-all domain: 30 created, 2 refused (Too many sign-ups from your organisation’s email domain right now. Try again in an hour, or ask a colleague to invite you.)
+NOTICE:  same account, org 2 -> ok
+NOTICE:  same account, org 3 -> ok
+NOTICE:  same account, org 4 -> REFUSED: You’ve set up several organisations today. Try again tomorrow, or ask support.
+signup events stored: 36, any plain address stored: false
+normalise: ama@gmail.com kofi@company.example
+staff signup: ready
+password-only enrolment, aal2: mfa_ok=false my_account.mfa_required=true trust={"untrusted": 1, "email_proof": false}
+workspace readable: 0
+ERROR:  Two-factor sign-in required.
+SQL statement "SELECT public.require_mfa()"
+PL/pgSQL function public.invite_member(text) line 4 at PERFORM
+ERROR:  Confirm it’s you by email first: open the sign-in link we email you.
+ERROR:  Confirm it’s you by email first: open the sign-in link we email you.
+ERROR:  Enter a code from your authenticator first.
+trust with fresh email link, aal2: mfa_required=false
+later password+code session: mfa_ok=true workspace rows=1
+backup device just verified: mfa_ok=false
+trust backup (already has a trusted device): mfa_required=false
+after trusting backup: mfa_ok=true
+ERROR:  That authenticator isn’t set up on your account.
+audit: two-factor device confirmed email, two-factor device confirmed trusted factor
+driver unaffected: true
+record_event ok: 
+ERROR:  Unknown event.
+ERROR:  permission denied for table audit_log
+ERROR:  permission denied for table audit_log
+ERROR:  permission denied for table audit_log
+events in log: 1 latest: app: reveal-pii
+ERROR:  Two-factor sign-in required.
+SQL statement "SELECT public.require_mfa()"
+PL/pgSQL function public.record_event(text,text,text) line 6 at PERFORM
+anon can record: false
+demo head before: none
+tick: {"ok": true, "rev": 1, "leader": true}
+heads follow: worlds rev=1 head rev=1
+lease-only update leaves head alone: true
+org heads: 37 (org_worlds: 37)
+member reads own head: 1
+driver reads other heads: 0
+ERROR:  permission denied for table org_world_heads
+anon reads demo head: 1
+publication: org_world_heads,org_worlds,world_heads,worlds
+== grandfathering
+trusted after first run + re-run: f1/existing
+== edge columns
+ocpp_networks.created_by
+smartcar_states.created_by
+== test_r4.sql
+before: tx=4 cmd=2 cache=4 links=2
+not callable by API roles: anon=false authenticated=false
+purge (forced): {"ocpp_log": 1, "audit_log": 1, "org_invites": 0, "ocpp_commands": 1, "signup_events": 1, "smartcar_cache": 3, "smartcar_links": 1, "smartcar_states": 1, "ocpp_cards_masked": 3, "ocpp_transactions": 1, "mfa_trusted_factors": 0, "audit_emails_removed": 1}
+second call within the hour (throttled): skipped
+tx after: 04•••E5, •••(open), AB12CD34
+commands left: Reset
+log rows left: 1
+smartcar cache left: veh-fresh
+smartcar links left: k-new
+states left: st-new
+signup events older than 48 h: 0
+audit: old email kept=false recent email kept=true old event kept=true 7-year-old entry kept=false
+audit insert ran the purge: old state gone=true, last run fresh=true
+insert survives a failing purge: true
+owner signup: ready
+purge: {"ocpp_log": 0, "audit_log": 0, "org_invites": 1, "ocpp_commands": 0, "signup_events": 0, "smartcar_cache": 0, "smartcar_links": 0, "smartcar_states": 0, "ocpp_cards_masked": 0, "ocpp_transactions": 0, "mfa_trusted_factors": 1, "audit_emails_removed": 0}
+invites left: fresh@r4.example
+trusted factors left: f1
+invite leaver: 2
+leaver signup: invited
+leaver accepts: R4 Fleet
+before erasure: address in invites=true in audit=2
+leaver deletes account: {"ok": true}
+after erasure: address in invites=false in audit=0 events kept=2 login gone=true
+other people's addresses untouched: true
+grants: anon delete_my_account=false authenticated=true

@@ -11,6 +11,10 @@ export interface ApiStore extends Store {
   // database can't tell (migration 20261117_edge_limits.sql not applied yet): the caller then uses the old global limit.
   countNetworksSince(ms: number, who?: string): Promise<number | null>;
   networkByKey(keyHash: string): Promise<{ id: string; name: string } | null>;
+  // Networks a signed-in user created, and replacing a network's key (only its creator). Optional: a store without them
+  // answers 501. Lets an operator who signed out on a shared device (the key is wiped there) get access back.
+  networksByCreator?(who: string): Promise<{ id: string; name: string; createdAt: number }[]>;
+  setNetworkKey?(id: string, who: string, keyHash: string): Promise<{ id: string; name: string } | null>;
   addChargePoint(cp: ChargePoint): Promise<void>;
   countChargePoints(networkId: string): Promise<number>;
   listChargePoints(networkId: string): Promise<ChargePoint[]>;
@@ -143,6 +147,19 @@ async function api(req: Request, d: ServerDeps): Promise<Response> {
       const key = randomToken(32);
       const id = await S.createNetwork(await sha256(key), name, who);
       return reply(200, { networkId: id, networkKey: key, name });
+    }
+    // Hardening pass: "reissue key to its creator". The old key stops working at once (anyone else holding it, or a
+    // copy left on a shared device, loses access); the new key is shown once, like at creation.
+    if (b.action === 'myNetworks' || b.action === 'reissueKey') {
+      const who = d.user ? await d.user(req) : null;
+      if (!who) throw new HttpError(401, 'Sign in to manage the networks you created.');
+      if (!S.networksByCreator || !S.setNetworkKey) throw new HttpError(501, 'This server can’t reissue keys yet.');
+      if (b.action === 'myNetworks') return reply(200, { networks: await S.networksByCreator(who) });
+      if (typeof b.networkId !== 'string' || !/^[A-Za-z0-9-]{1,64}$/.test(b.networkId)) throw new HttpError(400, 'Choose one of your networks.');
+      const key = randomToken(32);
+      const net = await S.setNetworkKey(b.networkId, who, await sha256(key));
+      if (!net) throw new HttpError(404, 'You didn’t create that network, or it no longer exists.');
+      return reply(200, { networkId: net.id, networkKey: key, name: net.name });
     }
     if (!isKey(b.key)) throw new HttpError(401, 'Missing network access key.');
     const net = await S.networkByKey(await sha256(b.key));

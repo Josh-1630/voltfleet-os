@@ -123,10 +123,11 @@
 
   // ---------------------------------------------------------------- the API (simulated server)
   function resolve(a, vid) {
-    if (a.mode === 'test') { const t = C().testVehicles.find((x) => x.appId === a.id && x.vid === vid); return t ? { test: t, make: VF.MODELS[t.model].oem, model: t.model } : null; }
+    if (a.mode === 'test') { const t = C().testVehicles.find((x) => x.appId === a.id && x.vid === vid); return t && VF.MODELS[t.model] ? { test: t, make: VF.MODELS[t.model].oem, model: t.model } : null; }
     const g = C().grants.find((x) => x.appId === a.id && x.vid === vid);
     if (!g) return null;
     const v = VF.vehicle(g.vehicleId);
+    if (!v) return null; // the grant outlived its vehicle (bad or old data): treat as no access
     return { grant: g, v, make: VF.model(v).oem, model: v.model };
   }
   const err = (status, type, code, description) => ({ status, body: { type, code, description, docURL: `https://docs.voltfleetos.com/errors/${type.toLowerCase()}#${code.toLowerCase()}` } });

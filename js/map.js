@@ -116,8 +116,13 @@
   function draw(inst) {
     const o = inst.spec, map = inst.map;
     inst.layer.clearLayers(); inst.vehicles = {}; inst.me = null; inst.road = null; inst.done = null;
+    // QA R3-14: map tiles are fetched from a third party, and the tiles requested show where the map is looking. When a
+    // map shows a real (connected) car, zoom stops at 13 (tiles about 5 km across), so the provider learns the area of
+    // town, not the street. The marker itself is drawn here, never sent anywhere.
+    const real = (o.vehicles || []).some((vh) => { const v = VF.fleetVehicle && VF.fleetVehicle(vh.id); return !!(v && v.real); });
+    const cap = real ? 13 : 18; if (map.getMaxZoom() !== cap) { map.setMaxZoom(cap); inst.fitKey = null; }
     const fitKey = (o.vb || []).join(',');
-    if (fitKey !== inst.fitKey) { inst.fitKey = fitKey; map.fitBounds(boundsOf(o), { padding: [6, 6], maxZoom: 15, animate: false }); }
+    if (fitKey !== inst.fitKey) { inst.fitKey = fitKey; map.fitBounds(boundsOf(o), { padding: [6, 6], maxZoom: Math.min(15, cap), animate: false }); }
     if (o.route && o.route.length > 1) {
       inst.road = roadFor(o.route);
       L.polyline(inst.road || o.route, { className: 'lm-route', interactive: false }).addTo(inst.layer);

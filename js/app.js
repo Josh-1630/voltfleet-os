@@ -416,8 +416,9 @@
   function tick() {
     if (document.hidden) return;
     if (leads()) {
-      if (VF.tick(1000)) (VF.tickHooks || []).forEach((f) => f());
-      if (VF.cloud && VF.cloud.active && VF.cloud.active()) VF.cloud.saveTick(); else VF.save();
+      // Each step on its own: one failing step (bad data, a bug) no longer stops the others or the save (QA R4-02).
+      if (VF.safely(VF.tick, 1000)) for (const f of (VF.tickHooks || []).slice()) VF.safely(f);
+      if (VF.cloud && VF.cloud.active && VF.cloud.active()) VF.safely(VF.cloud.saveTick); else VF.safely(VF.save);
     }
     tickN++;
     if (!current) return;
@@ -444,10 +445,10 @@
       const el = e.target.closest('[data-act]');
       if (!el || el.disabled) return;
       const fn = VF.ACT[el.dataset.act];
-      if (fn) { if (el.tagName === 'A') e.preventDefault(); fn(el, e); }
+      if (fn) { if (el.tagName === 'A') e.preventDefault(); VF.safely(fn, el, e); }
     });
-    document.addEventListener('change', (e) => { const el = e.target.closest('[data-chg]'); if (el && VF.CHG[el.dataset.chg]) VF.CHG[el.dataset.chg](el, e); });
-    document.addEventListener('input', (e) => { const el = e.target.closest('[data-inp]'); if (el && VF.INP[el.dataset.inp]) VF.INP[el.dataset.inp](el, e); });
+    document.addEventListener('change', (e) => { const el = e.target.closest('[data-chg]'); if (el && VF.CHG[el.dataset.chg]) VF.safely(VF.CHG[el.dataset.chg], el, e); });
+    document.addEventListener('input', (e) => { const el = e.target.closest('[data-inp]'); if (el && VF.INP[el.dataset.inp]) VF.safely(VF.INP[el.dataset.inp], el, e); });
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && (shellUi.pop || shellUi.drawer)) { closePops(); setDrawer(false); }
       if (e.key === '/' && current && !/^(INPUT|SELECT|TEXTAREA)$/.test((document.activeElement || {}).tagName || '') && $('#g-search') && document.getElementById('dialog')?.hidden !== false) { e.preventDefault(); $('#g-search').focus(); }
@@ -456,7 +457,7 @@
       if (e.key === 'Escape' && VF.ui.connect.flow) { VF.ui.connect.flow = null; VF.renderConnect(); }
       if (e.key === 'Escape' && VF.ui.driver.sheet) { VF.ui.driver.sheet = null; VF.renderSheet(); }
       const g = e.target.closest && e.target.closest('g[data-act]');
-      if (g && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); VF.ACT[g.dataset.act](g, e); }
+      if (g && (e.key === 'Enter' || e.key === ' ') && VF.ACT[g.dataset.act]) { e.preventDefault(); VF.safely(VF.ACT[g.dataset.act], g, e); }
     });
     window.addEventListener('hashchange', () => { closePops(); setDrawer(false); routeChange(); });
     window.addEventListener('storage', onStorage);

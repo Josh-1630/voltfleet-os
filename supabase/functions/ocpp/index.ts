@@ -68,6 +68,14 @@ const store: ApiStore = {
       return r.n;
     } catch (e) { if ((e as any)?.code === '42703') return null; throw e; }
   },
+  async networksByCreator(who) {
+    try { const rows = await sql`select id, name, created_at from private.ocpp_networks where created_by = ${who} order by created_at desc limit 20`; return rows.map((r: any) => ({ id: r.id, name: r.name, createdAt: t(r.created_at) as number })); }
+    catch (e) { if ((e as any)?.code === '42703') return []; throw e; } // created_by arrives with 20261117_edge_limits.sql
+  },
+  async setNetworkKey(id, who, h) {
+    if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
+    const [r] = await sql`update private.ocpp_networks set key_hash = ${h} where id = ${id} and created_by = ${who} returning id, name`; return r ? { id: r.id, name: r.name } : null;
+  },
   async networkByKey(h) { const [r] = await sql`select id, name from private.ocpp_networks where key_hash = ${h}`; return r ? { id: r.id, name: r.name } : null; },
   async addChargePoint(cp) { await sql`insert into private.ocpp_charge_points (id, network_id, label, password_hash, auth_mode) values (${cp.id}, ${cp.networkId}, ${cp.label}, ${cp.passwordHash}, ${cp.authMode})`; },
   async countChargePoints(net) { const [r] = await sql`select count(*)::int as n from private.ocpp_charge_points where network_id = ${net}`; return r.n; },
