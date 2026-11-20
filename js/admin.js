@@ -8,15 +8,33 @@
   const ui = VF.ui.admin = { roleFilter: 'all', q: '', revealed: {}, revealing: null, auditFilter: 'all', confirmReset: false };
   const me = () => VF.user(VF.session.userId);
   // ---------------------------------------------------------------- retention (QA R3-08: the settings were shown but never applied)
-  const RET_LIMITS = { sessions: [30, 3650], eta: [0, 30], audit: [365, 3650], deletedAccount: [0, 90] };
+  // QA R4-03: charging sessions and wallet transactions are billing records. Ghana's tax law expects business records to
+  // be kept for years (the Revenue Administration Act, 2016 (Act 915) is commonly read as six years), so the floor is
+  // six years (2190 days), not 30. Act 843's minimisation still applies: the records carry pseudonymous ids only, and
+  // erasure removes everything else about the person. Confirm the period with a Ghanaian tax adviser before launch.
+  const RET_LIMITS = { sessions: [2190, 3650], eta: [0, 30], audit: [365, 3650], deletedAccount: [0, 90] };
   VF.RET_LIMITS = RET_LIMITS;
   let lastRetention = 0;
   VF.applyRetention = function (force) {
     const s = VF.state; const now = VF.now(); if (!s || !s.settings) return;
     if (!force && now - lastRetention < VF.HOUR) return; lastRetention = now;
     const days = (k) => { const lim = RET_LIMITS[k]; const v = Number(s.settings.retention && s.settings.retention[k]); return Number.isFinite(v) ? clamp(v, lim[0], lim[1]) : lim[1]; };
+    // Periods saved under older limits (billing records used to allow 30 days and default to 730) move into range.
+    if (s.settings.retention && typeof s.settings.retention === 'object') for (const k of Object.keys(RET_LIMITS)) if (s.settings.retention[k] !== days(k)) s.settings.retention[k] = days(k);
     // Charging and billing records past their keep-until date (pseudonymous already; now gone).
     const keep = now - days('sessions') * DAY;
+    // QA R4-03: a wallet's balance is worked out from its transactions and charging sessions. Removing old ones used to
+    // change the balance (removed charges gave the money back), so what is removed is first carried forward as one
+    // "balance brought forward" amount per wallet.
+    for (const d of s.drivers || []) {
+      const w = d && d.wallet; if (!w || !Array.isArray(w.tx)) continue;
+      let carry = 0, n = 0;
+      for (const x of w.tx) if (x && x.t < keep) { carry += x.kind === 'topup' ? +x.amount || 0 : -(+x.amount || 0); n++; }
+      for (const x of s.sessions) if (x && x.driverId === d.id && x.end < keep && x.end >= (w.since || 0)) { carry -= +x.cost || 0; n++; }
+      if (!n) continue;
+      w.tx = w.tx.filter((x) => !(x && x.t < keep));
+      w.carry = Math.round(((+w.carry || 0) + carry) * 100) / 100; w.carryAt = Math.max(+w.carryAt || 0, keep);
+    }
     if (s.sessions.some((x) => x.end < keep)) s.sessions = s.sessions.filter((x) => !(x.end < keep));
     // Live arrival times are location-derived: kept only for a short time after the slot, then reduced to the slot.
     const etaKeep = now - days('eta') * DAY;
@@ -180,7 +198,7 @@
       <div class="grid g-2">
         <section class="panel"><div class="panel-head"><div><h2>Retention</h2><div class="sub">How long each kind of data is kept</div></div></div>
           <div class="panel-body form-grid">
-            <label class="field"><span>Charging and billing records (days)</span><input class="input" id="ret-s" type="number" min="30" value="${ret.sessions}" data-chg="ad-ret" data-k="sessions"></label>
+            <label class="field"><span>Charging and billing records (days)</span><input class="input" id="ret-s" type="number" min="${RET_LIMITS.sessions[0]}" max="${RET_LIMITS.sessions[1]}" value="${ret.sessions}" data-chg="ad-ret" data-k="sessions" aria-describedby="ret-s-hint"><small class="faint" id="ret-s-hint">At least 6 years: tax records (Act 915). Pseudonymous only.</small></label>
             <label class="field"><span>Live arrival times after a booking (days)</span><input class="input" id="ret-e" type="number" min="0" value="${ret.eta}" data-chg="ad-ret" data-k="eta"></label>
             <label class="field"><span>Audit log (days)</span><input class="input" id="ret-a" type="number" min="365" value="${ret.audit}" data-chg="ad-ret" data-k="audit"></label>
             <label class="field"><span>Grace before erasing a deleted account (days)</span><input class="input" id="ret-d" type="number" min="0" value="${ret.deletedAccount}" data-chg="ad-ret" data-k="deletedAccount"></label>

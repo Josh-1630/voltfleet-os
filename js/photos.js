@@ -21,10 +21,15 @@
   };
   const P = VF.photos = { map: {}, loading: false, failed: false };
   const BUNDLED = VF.CAR_PHOTOS || {};
-  try { const c = JSON.parse(localStorage.getItem(CACHE) || 'null'); if (c && Date.now() - c.at < TTL) P.map = c.map || {}; for (const k in P.map) { const p = P.map[k]; if (p && p.src) { p.src = https(p.src); p.licenseUrl = https(p.licenseUrl); p.source = https(p.source); } } } catch (e) { /* none */ }
+  const https = (u) => (/^https:\/\/[^\s"'<>]+$/i.test(String(u || '')) ? String(u) : ''); // only plain https links from the API
+  // Links cached on this device are checked again (QA R4-05: this ran before `https` existed, threw, and kept the
+  // cached links unchecked). Anything that isn't a plain https link is dropped.
+  try {
+    const c = JSON.parse(localStorage.getItem(CACHE) || 'null'); const m = c && Date.now() - c.at < TTL && c.map && typeof c.map === 'object' ? c.map : {};
+    for (const k of Object.keys(m)) { const p = m[k]; if (!p || typeof p !== 'object' || /^(__proto__|constructor|prototype)$/.test(k)) continue; P.map[k] = p.none ? { none: true } : { src: https(p.src), page: String(p.page || ''), file: String(p.file || ''), artist: String(p.artist || ''), license: String(p.license || ''), licenseUrl: https(p.licenseUrl), source: https(p.source) }; }
+  } catch (e) { /* none */ }
   Object.assign(P.map, BUNDLED); // bundled photos always win
   const save = () => { try { localStorage.setItem(CACHE, JSON.stringify({ at: Date.now(), map: P.map })); } catch (e) { /* not kept */ } };
-  const https = (u) => (/^https:\/\/[^\s"'<>]+$/i.test(String(u || '')) ? String(u) : ''); // only plain https links from the API
   const strip = (h) => { const d = document.createElement('div'); d.innerHTML = String(h || ''); return (d.textContent || '').replace(/\s+/g, ' ').trim(); };
   const articleFor = (model) => ARTICLE[model] || model.replace(/\s*\(.*\)$/, '');
 

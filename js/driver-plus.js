@@ -23,7 +23,9 @@
     const w = wallet(d, u);
     const sessions = VF.state.sessions.filter((x) => x.driverId === d.id && x.end >= w.since).map((x) => ({ t: x.end, kind: 'charge', amount: -x.cost, label: (VF.station(x.stationId) || {}).name || 'Charging', kwh: x.kwh, ref: x.id, se: x }));
     const tx = w.tx.map((x) => ({ t: x.t, kind: x.kind, amount: x.kind === 'topup' ? x.amount : -x.amount, label: x.kind === 'topup' ? `Top-up from ${x.provider}` : x.note || 'Roadside rescue', ref: x.ref }));
-    const rows = sessions.concat(tx) // session cost already includes the booking fee
+    // Older records removed by the retention policy are carried forward as one amount (QA R4-03).
+    const carry = +w.carry ? [{ t: +w.carryAt || w.since, kind: 'carry', amount: +w.carry, label: 'Balance brought forward', ref: '' }] : [];
+    const rows = sessions.concat(tx, carry) // session cost already includes the booking fee
      .sort((a, b) => b.t - a.t);
     return { w, rows, balance: sum(rows, (r) => r.amount) };
   }
@@ -40,7 +42,7 @@
       ${C.stat({ icon: 'zap', label: 'Charging, 30 days', value: money(spent, 0), hint: `${fmt.kwh(kwh)} · ${month.length} session${month.length === 1 ? '' : 's'}` }).replace('class="stat-card', 'class="stat-card span-4')}
       ${C.stat({ icon: 'fuel', label: 'Saved vs petrol', value: money(Math.max(0, saved), 0), hint: `same ${fmt.km(km)} in a petrol car at ${money(14.8)}/L`, tone: 'lime' }).replace('class="stat-card', 'class="stat-card span-4')}
       ${C.stat({ icon: 'leaf', label: 'CO₂ avoided', value: fmt.n(km * 0.19 - kwh * VF.CO2.GRID_KG_PER_KWH, 0), unit: 'kg', hint: 'vs a petrol car' }).replace('class="stat-card', 'class="stat-card span-4')}
-      ${C.card({ cls: 'span-12 flush', title: 'Activity', sub: 'Top-ups, bookings and charging receipts' }, L.rows.length ? `<ul class="tx-list">${L.rows.slice(0, 25).map((r) => `<li><span class="att-ic ${r.amount > 0 ? 'ok' : r.kind === 'charge' ? 'teal' : 'warn'}">${icon(r.amount > 0 ? 'plus' : r.kind === 'charge' ? 'plug-zap' : r.kind === 'fee' ? 'ticket' : 'truck')}</span><div><strong>${esc(r.label)}</strong><span class="small muted">${VF.fmtStamp(r.t)}${r.kwh ? ` · ${fmt.kwh(r.kwh)}` : ''}</span></div><span class="num ${r.amount > 0 ? 'text-ok' : ''}">${r.amount > 0 ? '+' : '−'}${money(Math.abs(r.amount))}</span>${r.kind === 'charge' ? `<button class="icon-btn" data-act="d-receipt" data-id="${esc(r.ref)}" aria-label="Download receipt" data-tip="Receipt">${icon('download')}</button>` : '<span></span>'}</li>`).join('')}</ul>` : C.empty({ icon: 'wallet', title: 'No activity yet' }))}
+      ${C.card({ cls: 'span-12 flush', title: 'Activity', sub: 'Top-ups, bookings and charging receipts' }, L.rows.length ? `<ul class="tx-list">${L.rows.slice(0, 25).map((r) => `<li><span class="att-ic ${r.kind === 'carry' ? 'muted' : r.amount > 0 ? 'ok' : r.kind === 'charge' ? 'teal' : 'warn'}">${icon(r.kind === 'carry' ? 'wallet' : r.amount > 0 ? 'plus' : r.kind === 'charge' ? 'plug-zap' : r.kind === 'fee' ? 'ticket' : 'truck')}</span><div><strong>${esc(r.label)}</strong><span class="small muted">${VF.fmtStamp(r.t)}${r.kwh ? ` · ${fmt.kwh(r.kwh)}` : ''}</span></div><span class="num ${r.amount > 0 ? 'text-ok' : ''}">${r.amount > 0 ? '+' : '−'}${money(Math.abs(r.amount))}</span>${r.kind === 'charge' ? `<button class="icon-btn" data-act="d-receipt" data-id="${esc(r.ref)}" aria-label="Download receipt" data-tip="Receipt">${icon('download')}</button>` : '<span></span>'}</li>`).join('')}</ul>` : C.empty({ icon: 'wallet', title: 'No activity yet' }))}
       <p class="span-12 small muted">${icon('lock')} Payments are simulated in this demo. When live, you approve each top-up on your own phone with your Mobile Money PIN; VoltFleet never asks for your PIN.</p>
     </div>`;
   }

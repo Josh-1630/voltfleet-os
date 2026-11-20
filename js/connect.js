@@ -625,7 +625,12 @@
     'dev-ex': (el) => { ui.ex[el.dataset.k] = el.value; if (el.dataset.k === 'ep') { const ep = ENDPOINTS.find((e) => e.id === el.value); if (ep.body) ui.ex.action = ep.body[0]; } VF.rerender(); },
     'dev-tv-model': (el) => { ui.addTest = el.value; },
     'cx-opt': (el) => { ui.flow.optional[el.dataset.s] = el.checked; },
-    'ad-cx-price': (el) => { const v = Number(el.value); if (v >= 0) { C().pricing[el.dataset.k] = v; VF.audit(VF.session.userId, 'pricing-change', `Connect ${el.dataset.k} = $${v}`); VF.save(); VF.toast('Saved'); } },
+    // QA R4-06: an emptied field used to save $0 (Number('') is 0) and 1e400 saved Infinity, like R3-08's prices.
+    'ad-cx-price': (el) => {
+      const k = el.dataset.k; const v = el.value.trim() === '' ? NaN : Number(el.value);
+      if (!['build', 'scale'].includes(k) || !Number.isFinite(v) || v < 0 || v > 1000) { VF.toast('Enter a price from $0 to $1,000 per vehicle'); VF.rerender(); return; }
+      C().pricing[k] = Math.round(v * 100) / 100; VF.audit(VF.session.userId, 'pricing-change', `Connect ${k} = $${C().pricing[k]}`); VF.save(); VF.toast('Saved');
+    },
   });
   Object.assign(VF.INP, { 'dev-vin': (el) => { ui.vin = el.value; } });
 })();

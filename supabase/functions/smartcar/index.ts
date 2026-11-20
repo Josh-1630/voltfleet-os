@@ -5,6 +5,11 @@ import postgres from 'npm:postgres@3.4.5';
 import { handle, type Store } from './handler.ts';
 
 const sql = postgres(Deno.env.get('SUPABASE_DB_URL')!, { prepare: false, max: 3, idle_timeout: 20 });
+// QA round 4 (R3-15): server-side retention runs inside the database, at most hourly (private.purge_expired, from
+// migration 20261119_retention.sql). This only gives it a chance to run; it never waits for it, and before that
+// migration is applied the call fails and is ignored.
+let purgeAt = 0;
+const purge = () => { const t = Date.now(); if (t - purgeAt < 3_600_000) return; purgeAt = t; sql`select private.purge_expired(false)`.then(() => {}, () => {}); };
 const ms = (t: Date | string | null) => (t ? new Date(t).getTime() : 0);
 
 const store: Store = {
@@ -13,6 +18,7 @@ const store: Store = {
     try { await sql`insert into private.smartcar_states (state_hash, created_by) values (${hash}, ${createdBy ?? null})`; }
     catch (e) { if ((e as any)?.code !== '42703') throw e; await sql`insert into private.smartcar_states (state_hash) values (${hash})`; }
     await sql`delete from private.smartcar_states where created_at < now() - interval '1 day'`;
+    purge();
   },
   async pendingStates(sinceMs, who) {
     if (!who) { const [r] = await sql`select count(*)::int as n from private.smartcar_states where used_at is null and created_at > ${new Date(sinceMs)}`; return r.n; }
@@ -28,7 +34,7 @@ const store: Store = {
     return rows.length ? { createdAt: ms(rows[0].created_at) } : null;
   },
   async addLink(keyHash, userId) { await sql`insert into private.smartcar_links (key_hash, user_id) values (${keyHash}, ${userId})`; },
-  async findLink(keyHash) { const rows = await sql`update private.smartcar_links set last_used_at = now() where key_hash = ${keyHash} returning user_id`; return rows.length ? { userId: rows[0].user_id } : null; },
+  async findLink(keyHash) { purge(); const rows = await sql`update private.smartcar_links set last_used_at = now() where key_hash = ${keyHash} returning user_id`; return rows.length ? { userId: rows[0].user_id } : null; },
   async removeLink(keyHash) {
     const rows = await sql`delete from private.smartcar_links where key_hash = ${keyHash} returning user_id`;
     if (!rows.length) return null;

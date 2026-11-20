@@ -521,6 +521,9 @@
         if (!/^[A-Z]{1,3}\s?\d{1,5}-\d{2}$/i.test(d.plate.trim())) return 'Enter the plate like GR 1234-25.';
         if (!/^[A-HJ-NPR-Z0-9]{11,17}$/i.test(d.vin.trim())) return 'A VIN has 11 to 17 letters and numbers, without I, O or Q.';
         if (F().vehicles.some((v) => v.plate.toUpperCase() === d.plate.trim().toUpperCase())) return 'A vehicle with that plate is already in the fleet.';
+        // QA R4-08: the model and depot come from lists; anything else (or a year like 0 or 99999) is refused.
+        if (!Object.prototype.hasOwnProperty.call(VF.MODELS, d.model) || !F().depots.some((x) => x.id === d.depot)) return 'Choose a model and a depot from the lists.';
+        if (!/^\d{4}$/.test(String(d.year).trim()) || +d.year < 2010 || +d.year > 2030) return 'Enter a model year from 2010 to 2030.';
         const v = VF.fleet.addVehicle({ name: d.name.trim(), model: d.model, plate: d.plate.trim(), vin: d.vin.trim(), year: d.year, depot: d.depot });
         VF.save(); VF.toast(`${v.name} added to the fleet`); ui.vehicle = v.id; ui.vtab = 'overview'; location.hash = 'm-vehicle'; VF.rerender();
         return null;
@@ -568,7 +571,13 @@
     'm-add-maint': (el) => {
       const v = VF.fleetVehicle(el.dataset.id);
       C.modal({ title: 'Add maintenance record', sub: `${v.name} · ${fmt.n(v.odo)} km`, submitLabel: 'Add record', body: `<div class="form-grid-2">${C.field('Work done', C.input('type', '', 'required maxlength="60" placeholder="e.g. Tyre rotation"'))}${C.field(`Cost (${VF.state.settings.currency})`, C.input('cost', '', 'type="number" min="0" step="0.01"'))}</div>${C.field('Notes', '<textarea class="input" name="notes" rows="3" maxlength="200"></textarea>')}`,
-        onSubmit(d) { if (!d.type.trim()) return 'Describe the work done.'; VF.fleet.addMaintenance(v.id, d); VF.save(); VF.toast('Record added'); VF.rerender(); return null; } });
+        onSubmit(d) {
+          if (!d.type.trim()) return 'Describe the work done.';
+          // QA R4-08: a negative cost used to be saved (and lowered the fleet's reported maintenance spend).
+          const cost = String(d.cost || '').trim() === '' ? 0 : Number(d.cost);
+          if (!Number.isFinite(cost) || cost < 0 || cost > 1e7) return 'Enter a cost from 0 to 10,000,000.';
+          VF.fleet.addMaintenance(v.id, { type: String(d.type).trim().slice(0, 60), cost: Math.round(cost * 100) / 100, notes: String(d.notes || '').slice(0, 200) }); VF.save(); VF.toast('Record added'); VF.rerender(); return null;
+        } });
     },
     'm-vtab': (el) => { ui.vtab = el.dataset.k; VF.rerender(); },
     'm-vfilter': (el) => { ui.vfilter = el.dataset.k; VF.rerender(); },
@@ -589,7 +598,7 @@
     },
   });
   Object.assign(VF.CHG, {
-    'm-assign': (el) => { VF.fleet.assign(el.dataset.id, el.value || null); VF.save(); VF.toast(el.value ? `${VF.fleetDriver(el.value).name} assigned` : 'Driver unassigned'); VF.rerender(); },
+    'm-assign': (el) => { const dr = el.value ? VF.fleetDriver(el.value) : null; if (el.value && !dr) { VF.rerender(); return; } VF.fleet.assign(el.dataset.id, el.value || null); VF.save(); VF.toast(dr ? `${dr.name} assigned` : 'Driver unassigned'); VF.rerender(); },
     'm-stconn': (el) => { ui.stConn = el.value; VF.rerender(); },
     'm-stavail': (el) => { ui.stAvail = el.checked; VF.rerender(); },
     'm-stfrom': (el) => { ui.stFrom = el.value; VF.rerender(); },
@@ -601,7 +610,8 @@
     if (e.target.getAttribute('id') !== 'm-reg-form') return;
     e.preventDefault();
     const d = Object.fromEntries(new FormData(e.target).entries()); const box = document.getElementById('m-reg-error');
-    const err = !d.name.trim() ? 'Give the vehicle a display name.' : !/^[A-Z]{1,3}\s?\d{1,5}-\d{2}$/i.test(d.plate.trim()) ? 'Enter the plate like GR 1234-25.' : !/^[A-HJ-NPR-Z0-9]{11,17}$/i.test(d.vin.trim()) ? 'A VIN has 11 to 17 letters and numbers, without I, O or Q.' : '';
+    const err = !d.name.trim() ? 'Give the vehicle a display name.' : !/^[A-Z]{1,3}\s?\d{1,5}-\d{2}$/i.test(d.plate.trim()) ? 'Enter the plate like GR 1234-25.' : !/^[A-HJ-NPR-Z0-9]{11,17}$/i.test(d.vin.trim()) ? 'A VIN has 11 to 17 letters and numbers, without I, O or Q.'
+      : !F().depots.some((x) => x.id === d.depot) ? 'Choose a depot from the list.' : !/^\d{4}$/.test(String(d.year).trim()) || +d.year < 2010 || +d.year > 2030 ? 'Enter a model year from 2010 to 2030.' : ''; // QA R4-08
     if (err) { box.hidden = false; box.innerHTML = `${icon('triangle-alert')}<span>${esc(err)}</span>`; return; }
     VF.fleet.updateVehicle(e.target.dataset.id, { name: d.name.trim(), plate: d.plate.trim(), vin: d.vin.trim(), year: d.year, depot: d.depot });
     VF.save(); VF.toast('Vehicle details saved'); VF.rerender();

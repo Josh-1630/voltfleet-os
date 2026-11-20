@@ -264,6 +264,8 @@
     if (online()) schedulePush();
   };
   cloud.active = () => !!target;
+  // Resolves once the writes queued so far have been tried (used before leaving a workspace, QA R4-04).
+  cloud.flush = () => (target ? chain.then(() => undefined, () => undefined) : Promise.resolve());
   // Should this device run the simulation? null means "not connected, decide locally".
   cloud.leads = function () {
     if (!target || !online()) return null;

@@ -21,15 +21,30 @@
   R.modeLabel = () => ({ simulated: 'Smartcar simulator', test: 'Smartcar test mode', live: 'Live vehicles' }[cfg.mode] || cfg.mode);
 
   // ---------------------------------------------------------------- local persistence (this device only)
+  // QA R4-01: the access key and the last readings (including the car's location) belong to whoever connected the car:
+  // the signed-in account, or the demo. Another account, or the demo, on the same browser never loads them, and signing
+  // out of the account disconnects them (R.signOut). The top-level fields keep the demo's entry for app versions cached
+  // before this change.
+  const owner = () => (VF.mode === 'account' && VF.auth && VF.auth.account && VF.auth.account.id ? 'acct:' + VF.auth.account.id : 'demo');
+  let byOwner = {}; R.owner = null;
   function load() {
     try {
-      const d = JSON.parse(localStorage.getItem(STORE) || 'null'); if (!d) return;
-      R.key = d.key || null; R.names = d.names || {};
-      R.vehicles = (d.vehicles || []).map((v) => { ensureModel(v.make, v.modelName, v.summary && v.summary.capacityKwh, v.model); return v; });
+      const d = JSON.parse(localStorage.getItem(STORE) || 'null'); if (!d || typeof d !== 'object') return;
+      byOwner = d.byOwner && typeof d.byOwner === 'object' && !Array.isArray(d.byOwner) ? d.byOwner : d.key ? { demo: { key: d.key, names: d.names, vehicles: d.vehicles } } : {};
     } catch (e) { /* nothing stored */ }
   }
+  function use(o) {
+    if (R.owner === o) return; R.owner = o;
+    const d = Object.prototype.hasOwnProperty.call(byOwner, o) && byOwner[o] && typeof byOwner[o] === 'object' ? byOwner[o] : {};
+    R.key = typeof d.key === 'string' ? d.key : null; R.names = d.names && typeof d.names === 'object' ? d.names : {}; R.lastPoll = 0; R.error = '';
+    R.vehicles = (Array.isArray(d.vehicles) ? d.vehicles : []).filter((v) => v && typeof v === 'object').map((v) => { v.model = ensureModel(v.make, v.modelName, v.summary && v.summary.capacityKwh, v.model); return v; });
+  }
+  R.sync = () => use(owner());
   function persist() {
-    try { localStorage.setItem(STORE, JSON.stringify({ key: R.key, names: R.names, vehicles: R.vehicles })); } catch (e) { /* storage blocked */ }
+    if (R.owner === null) R.sync();
+    if (R.key) byOwner[R.owner] = { key: R.key, names: R.names, vehicles: R.vehicles }; else delete byOwner[R.owner];
+    const demo = byOwner.demo || {};
+    try { localStorage.setItem(STORE, JSON.stringify({ byOwner, key: demo.key || null, names: demo.names || {}, vehicles: demo.vehicles || [] })); } catch (e) { /* storage blocked */ }
   }
 
   // ---------------------------------------------------------------- function calls
@@ -90,6 +105,7 @@
   }
   // Put this device's real vehicles into the fleet shown on screen (never saved: see VF.stateJSON).
   R.inject = () => {
+    R.sync();
     const f = VF.state && VF.state.fleet; if (!f) return;
     f.vehicles = f.vehicles.filter((v) => !v.real).concat(R.vehicles);
   };
@@ -120,14 +136,17 @@
     if (q.has('error')) { VF.toast(q.get('error') === 'access_denied' ? 'Vehicle connection cancelled.' : 'Smartcar couldn’t connect the vehicle. Try again.'); return true; }
     if (!state || !expected || state !== expected) { VF.toast('That connection link did not come from this device. Try again.'); return true; }
     try {
+      if (VF.authReady) { try { await VF.authReady; } catch (e) { /* demo */ } } // link to the account that started it, once it's signed in again
+      R.sync();
       const res = await call('link', { userId: q.get('user_id'), state });
-      R.key = res.key; R.lastPoll = Date.now(); ingest(res.vehicles || []);
+      R.sync(); R.key = res.key; R.lastPoll = Date.now(); ingest(res.vehicles || []);
       VF.toast(`${res.vehicles.length} vehicle${res.vehicles.length === 1 ? '' : 's'} connected through Smartcar`);
       VF.rerender();
     } catch (e) { VF.toast(e.message); }
     return true;
   };
   R.poll = async (force) => {
+    R.sync();
     if (!R.key || R.polling) return;
     R.polling = true;
     try { const res = await call('vehicles', { key: R.key, force: !!force }); R.error = ''; R.lastPoll = Date.now(); ingest(res.vehicles || []); if (VF.rerender) VF.rerender(); }
@@ -144,10 +163,17 @@
     try { if (R.key) await call('disconnect', { key: R.key }); } catch (e) { /* removed locally either way */ }
     R.key = null; R.vehicles = []; R.names = {}; persist(); R.inject();
   };
+  // Signing out of an account (QA R4-01): its connected cars are disconnected on the server and their key and last
+  // readings removed from this browser, so the next person on a shared device can't see or control them. At most 4 s.
+  R.signOut = async () => {
+    R.sync(); if (R.owner === 'demo' || !R.key) return;
+    await Promise.race([R.disconnect(), new Promise((r) => setTimeout(r, 4000))]);
+    R.key = null; R.vehicles = []; R.names = {}; persist();
+  };
   // Poll while an EV Manager is signed in and the tab is visible.
   setInterval(() => {
     const u = VF.session && VF.user && VF.user(VF.session.userId);
-    if (R.key && !document.hidden && u && u.role === 'manager' && Date.now() - R.lastPoll > POLL_MS) R.poll();
+    if (!document.hidden && u && u.role === 'manager') { R.sync(); if (R.key && Date.now() - R.lastPoll > POLL_MS) R.poll(); }
   }, 5000);
 
   // ---------------------------------------------------------------- UI pieces

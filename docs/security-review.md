@@ -109,6 +109,18 @@ The Supabase advisor's remaining warnings list functions that signed-in users ma
 - Fonts are served by the app itself, so Google no longer receives every visitor's IP address; the CSP no longer allows Google Fonts or `ws://localhost:8788`.
 - `netlify.toml` now publishes only the app files and sends the headers of item G, for when the site is served from Netlify.
 
+**20 November 2026 (QA round 4, `docs/qa/round-4.md`):**
+- **Retention on the server.** Server data now has retention periods (`20261119_retention.sql`):
+  - OCPP transactions are kept 6 years as billing records, with card numbers masked after 90 days; commands 90 days;
+  - Smartcar readings (location) 30 days, unused vehicle links 180 days;
+  - audit log 7 years, with email addresses removed after 1 year;
+  - finished invitations 30 days.
+- **Erasure.** Deleting an account also removes the email address from invitations and the audit log, and the person's details from the team workspace.
+- **Shared devices.** Signing out disconnects cars connected in that account and removes their key and last location from the browser. Device keys are kept per account, so another account or the demo never loads them.
+- **Demo resilience.** A crafted demo snapshot with unknown vehicle models or dangling fleet links can no longer break pages or stop the shared simulation.
+- **Billing retention.** The in-app floor is now 6 years (tax records). Retention no longer changes wallet balances.
+- **CAPTCHA.** Support for Turnstile or hCaptcha is ready in the app and off until a site key is set (`js/config.js`).
+
 ## Open items and how to fix them
 
 **A. Real sign-in and server-side authorisation (Critical before real customers).** Today anyone can choose any role, including Admin. Role checks run only in the browser, and the simulation runs in visitors' browsers. Before production:
@@ -119,7 +131,7 @@ The Supabase advisor's remaining warnings list functions that signed-in users ma
 
 **B. Public demo data.** Until A is done, anything typed into the demo is readable by anyone with the public key. The sign-in page now warns about this. Don't use the demo with real drivers' data.
 
-**C. Keys in browser storage.** The Smartcar device key and the OCPP network key sit in `localStorage`, where an XSS bug could read them. The CSP makes that much harder. With A, move them to HttpOnly, Secure, SameSite cookies or server-side sessions.
+**C. Keys in browser storage.** The Smartcar device key and the OCPP network key sit in `localStorage`, where an XSS bug could read them. The CSP makes that much harder. Since QA round 4 they are kept per account and the Smartcar key is removed at sign-out. The OCPP key isn't removed, because only its hash exists on the server; a server action that reissues it to the network's creator would allow that. With A, move them to HttpOnly, Secure, SameSite cookies or server-side sessions.
 
 **D. OCPP password in the URL.** `?key=` exists because browsers can't send WebSocket auth headers (the in-app charger simulator needs it). Real chargers should use HTTP Basic auth (OCPP security profile 1 or 2) over TLS, or client certificates (profile 3). Add an `OCPP_ALLOW_QUERY_KEY=false` setting for production so passwords never appear in access logs.
 
@@ -139,7 +151,7 @@ The Supabase advisor's remaining warnings list functions that signed-in users ma
 **I. Compliance (Ghana)**
 - Register with the Data Protection Commission under the Data Protection Act, 2012 (Act 843).
 - Complete a data-protection impact assessment for telematics and location.
-- Confirm retention periods.
+- Confirm retention periods. The ones now in place are listed in `docs/qa/round-4.md`: 6 years for billing records, under Act 915 as commonly read; Act 843 minimisation for everything else.
 - Have a lawyer review consent texts.
 
 ## Re-running the checks

@@ -27,6 +27,20 @@ window.VOLTFLEET_SMARTCAR = {
   mode: 'simulated',
 };
 
+/* CAPTCHA on sign-up, sign-in links, password resets and phone codes (QA round 4, R1-08). Off while siteKey is empty.
+   To turn it on:
+     1. Supabase -> Authentication -> Attack Protection: enable CAPTCHA, choose Cloudflare Turnstile or hCaptcha, and
+        paste the provider's SECRET key there (never here).
+     2. Put the provider's public site key below, and provider: 'turnstile' or 'hcaptcha'.
+     3. Allow the provider in index.html's Content-Security-Policy, for example for Turnstile:
+          script-src 'self' https://challenges.cloudflare.com;  frame-src https://challenges.cloudflare.com
+        (for hCaptcha: https://hcaptcha.com https://*.hcaptcha.com in script-src, frame-src, style-src and connect-src).
+   Do 2 and 3 before 1: once Supabase requires CAPTCHA, every sign-up and sign-in from an app without it is refused. */
+window.VOLTFLEET_CAPTCHA = {
+  provider: 'turnstile',
+  siteKey: '',
+};
+
 window.VOLTFLEET_MAPS = {
   provider: 'carto',
   key: '',

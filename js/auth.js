@@ -29,6 +29,7 @@
     if (/invalid login credentials/i.test(m)) return 'Wrong email or password.';
     if (/email not confirmed/i.test(m)) return 'Confirm your email first: open the link we sent you, then sign in.';
     if (/user already registered|already been registered/i.test(m)) return 'An account already uses that email. Sign in instead, or reset your password.';
+    if (/captcha/i.test(m)) return 'The security check didn’t pass. Complete it again and retry.';
     if (/for security purposes|rate limit|too many/i.test(m)) return 'Too many attempts. Wait a minute and try again.';
     if (/password should be|weak password|pwned/i.test(m)) return 'Choose a stronger password: at least 10 characters, not one that has appeared in a data breach.';
     if (/signups not allowed|signup is disabled/i.test(m)) return 'New sign-ups are closed right now.';
@@ -72,6 +73,38 @@
       .then((r) => { if (r && r.error && !/PGRST202|could not find the function|schema cache/i.test((r.error.code || '') + ' ' + (r.error.message || ''))) console.warn('VoltFleet audit:', r.error.message); })
       .catch(() => { /* offline: the in-app trail still has it */ });
   };
+  // ---------------------------------------------------------------- optional CAPTCHA (QA R1-08 remainder), off by default
+  // Only with a site key in js/config.js (VOLTFLEET_CAPTCHA) and the provider allowed in the CSP. The token goes to
+  // Supabase Auth with each request it checks (sign-up, password sign-in, emailed links and codes, password reset);
+  // the provider's secret key lives in Supabase's settings only. Each token is used once, so the widget resets.
+  const capCfg = Object.assign({ provider: '', siteKey: '' }, window.VOLTFLEET_CAPTCHA || {});
+  const CAP = { turnstile: { src: 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit', g: 'turnstile' }, hcaptcha: { src: 'https://js.hcaptcha.com/1/api.js?render=explicit&recaptchacompat=off', g: 'hcaptcha' } }[capCfg.provider];
+  A.captchaOn = !!(CAP && /^[\w-]{10,100}$/.test(String(capCfg.siteKey || '')));
+  let capLoading = null, capWidget = null, capEl = null;
+  const capApi = () => (CAP ? window[CAP.g] : null);
+  function loadCaptcha() {
+    if (capLoading) return capLoading;
+    capLoading = new Promise((resolve, reject) => {
+      const s = document.createElement('script'); s.src = CAP.src; s.async = true;
+      s.onload = () => (capApi() ? resolve(capApi()) : reject(new Error('captcha'))); s.onerror = () => { capLoading = null; reject(new Error('captcha')); };
+      document.head.appendChild(s);
+    });
+    return capLoading;
+  }
+  const captchaSlot = () => (A.captchaOn ? '<div class="captcha-slot" id="auth-captcha"></div>' : '');
+  A.mountCaptcha = async function () {
+    if (!A.captchaOn) return;
+    const el = document.getElementById('auth-captcha'); if (!el || el === capEl) return;
+    try {
+      const api = await loadCaptcha(); if (!el.isConnected) return;
+      if (capWidget != null) { try { api.remove(capWidget); } catch (e) { /* already gone with its element */ } }
+      capEl = el; capWidget = api.render(el, { sitekey: capCfg.siteKey, theme: VF.theme.get() === 'dark' ? 'dark' : 'light' });
+    } catch (e) { capEl = null; /* the submit says what to do */ }
+  };
+  // undefined: CAPTCHA is off. null: it's on and not solved (or couldn't load).
+  const captchaToken = () => { if (!A.captchaOn) return undefined; const api = capApi(); let t = ''; try { t = api && capWidget != null ? api.getResponse(capWidget) : ''; } catch (e) { /* none */ } return t || null; };
+  const captchaReset = () => { const api = capApi(); try { if (api && capWidget != null) api.reset(capWidget); } catch (e) { /* none */ } };
+  const withCaptcha = (o, t) => (t ? Object.assign({}, o, { captchaToken: t }) : o);
   const cacheAccount = (a) => { try { if (a) localStorage.setItem(ACCT_CACHE, JSON.stringify(a)); else localStorage.removeItem(ACCT_CACHE); } catch (e) { /* not kept */ } };
 
   // ---------------------------------------------------------------- session
@@ -152,7 +185,9 @@
     VF.saveLocal();
     // Whenever the team's saved workspace arrives, map this account to its own person in it again.
     // Returns true when that changed the workspace, so the change is shared with the team.
+    A.leaving = false;
     if (VF.cloud && VF.cloud.start) VF.cloud.start({ org: acct.org.id, onAdopt: () => {
+      if (A.leaving) return false; // leaving or deleting the account (QA R4-04)
       const mine = () => JSON.stringify([VF.state.members && VF.state.members[A.account.id], VF.session && VF.user(VF.session.userId)]);
       const before = JSON.stringify([VF.state.members && VF.state.members[A.account.id], (VF.state.members && VF.state.members[A.account.id] && VF.user(VF.state.members[A.account.id])) || null]);
       VF.session = { userId: personalise(VF.state, A.account), account: true };
@@ -186,11 +221,30 @@
     return u.id;
   }
 
+  // QA R4-04: the team workspace (a shared snapshot) holds a copy of each member's name, email and phone, written by
+  // personalise(). When someone deletes their account, leaves, or is removed, that copy is taken out of the workspace:
+  // erasure removes the name too; leaving or removal keeps the name (who did what stays readable for the team) but drops
+  // the contact details. Best effort, waits at most 5 s for the write; must run while the writer is still a member.
+  async function scrubMember(accountId, erase) {
+    const s = VF.state; if (VF.mode !== 'account' || !s || !s.members || !accountId) return;
+    if (A.account && accountId === A.account.id) A.leaving = true; // a newer workspace arriving meanwhile doesn't put the details back
+    const uid = s.members[accountId]; const u = uid && VF.user(uid);
+    if (u) Object.assign(u, { email: '', phone: '', account: false }, erase ? { name: 'Former member' } : {});
+    delete s.members[accountId];
+    VF.save();
+    if (VF.cloud && VF.cloud.flush) await Promise.race([VF.cloud.flush(), new Promise((r) => setTimeout(r, 5000))]);
+  }
+  A.scrubMember = scrubMember;
+  // The server refused (offline, second factor needed...): the person is still a member, so their details go back.
+  function stay() { if (!A.leaving || !A.account) return; A.leaving = false; try { VF.session = { userId: personalise(VF.state, A.account), account: true }; VF.save(); } catch (e) { /* next adopt maps it */ } }
   A.signOut = async function (everywhere) {
+    // QA R4-01: cars connected in this account are disconnected and their readings (location included) removed from
+    // this browser first, while the account is still the one they belong to.
+    try { if (VF.real && VF.real.signOut) await VF.real.signOut(); } catch (e) { /* removed locally anyway */ }
     try { await sb.auth.signOut({ scope: everywhere ? 'global' : 'local' }); } catch (e) { /* signed out locally anyway */ }
     // Shared devices: remove this account's workspace copy from the browser.
     try { for (const k of Object.keys(localStorage)) if (k.startsWith(ORG_PREFIX)) localStorage.removeItem(k); } catch (e) { /* none */ }
-    cacheAccount(null); try { sessionStorage.removeItem('voltfleet-os:session'); } catch (e) { /* none */ }
+    cacheAccount(null); try { for (const k of ['voltfleet-os:session', 'voltfleet-os:ocpp-pw', 'voltfleet-os:smartcar-state']) sessionStorage.removeItem(k); } catch (e) { /* none */ }
     location.replace(location.pathname + '#signin'); location.reload();
   };
 
@@ -208,11 +262,11 @@
     if (m === 'signin') body = head('Sign in', 'Welcome back to VoltFleet.') + tabs + `<form id="auth-signin" class="auth-form" novalidate>
         ${field('Email', `<input class="input lg" name="email" type="email" autocomplete="username" required value="${esc(ui.email || '')}">`)}
         ${field('<span class="row between"><span>Password</span><button type="button" class="link-btn small" data-act="auth-mode" data-k="reset">Forgot password?</button></span>', '<input class="input lg" name="password" type="password" autocomplete="current-password" required>')}
-        ${err(ui)}${ok(ui)}${btn('Sign in')}</form>
+        ${captchaSlot()}${err(ui)}${ok(ui)}${btn('Sign in')}</form>
         <div class="auth-alt"><button type="button" class="btn" data-act="auth-mode" data-k="magic">${icon('mail')}Email me a sign-in link</button>${A.phone ? `<button type="button" class="btn" data-act="auth-mode" data-k="phone">${icon('smartphone')}Use my phone number</button>` : ''}</div>`;
-    else if (m === 'magic') body = head('Sign in with a link', 'We’ll email you a one-time link. No password needed.') + tabs + `<form id="auth-magic" class="auth-form" novalidate>${field('Email', `<input class="input lg" name="email" type="email" autocomplete="username" required value="${esc(ui.email || '')}">`)}${err(ui)}${ok(ui)}${btn('Send sign-in link')}</form><button type="button" class="link-btn" data-act="auth-mode" data-k="signin">${icon('arrow-left')}Back to password sign-in</button>`;
-    else if (m === 'phone') body = head('Sign in with your phone', ui.phoneSent ? `Enter the 6-digit code we sent to ${esc(ui.phone || '')}.` : 'We’ll text you a 6-digit code.') + tabs + `<form id="auth-phone" class="auth-form" novalidate>${ui.phoneSent ? field('Code', '<input class="input lg mono" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" required>') : field('Phone number', `<input class="input lg" name="phone" type="tel" autocomplete="tel" placeholder="+233 24 123 4567" required value="${esc(ui.phone || '')}">`, 'Include the country code, e.g. +233.')}${err(ui)}${ok(ui)}${btn(ui.phoneSent ? 'Verify and sign in' : 'Send code')}</form><button type="button" class="link-btn" data-act="auth-mode" data-k="signin">${icon('arrow-left')}Back</button>`;
-    else if (m === 'reset') body = head('Reset your password', 'We’ll email you a link to choose a new one.') + tabs + `<form id="auth-reset" class="auth-form" novalidate>${field('Email', `<input class="input lg" name="email" type="email" autocomplete="username" required value="${esc(ui.email || '')}">`)}${err(ui)}${ok(ui)}${btn('Send reset link')}</form><button type="button" class="link-btn" data-act="auth-mode" data-k="signin">${icon('arrow-left')}Back to sign in</button>`;
+    else if (m === 'magic') body = head('Sign in with a link', 'We’ll email you a one-time link. No password needed.') + tabs + `<form id="auth-magic" class="auth-form" novalidate>${field('Email', `<input class="input lg" name="email" type="email" autocomplete="username" required value="${esc(ui.email || '')}">`)}${captchaSlot()}${err(ui)}${ok(ui)}${btn('Send sign-in link')}</form><button type="button" class="link-btn" data-act="auth-mode" data-k="signin">${icon('arrow-left')}Back to password sign-in</button>`;
+    else if (m === 'phone') body = head('Sign in with your phone', ui.phoneSent ? `Enter the 6-digit code we sent to ${esc(ui.phone || '')}.` : 'We’ll text you a 6-digit code.') + tabs + `<form id="auth-phone" class="auth-form" novalidate>${ui.phoneSent ? field('Code', '<input class="input lg mono" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" required>') : field('Phone number', `<input class="input lg" name="phone" type="tel" autocomplete="tel" placeholder="+233 24 123 4567" required value="${esc(ui.phone || '')}">`, 'Include the country code, e.g. +233.')}${ui.phoneSent ? '' : captchaSlot()}${err(ui)}${ok(ui)}${btn(ui.phoneSent ? 'Verify and sign in' : 'Send code')}</form><button type="button" class="link-btn" data-act="auth-mode" data-k="signin">${icon('arrow-left')}Back</button>`;
+    else if (m === 'reset') body = head('Reset your password', 'We’ll email you a link to choose a new one.') + tabs + `<form id="auth-reset" class="auth-form" novalidate>${field('Email', `<input class="input lg" name="email" type="email" autocomplete="username" required value="${esc(ui.email || '')}">`)}${captchaSlot()}${err(ui)}${ok(ui)}${btn('Send reset link')}</form><button type="button" class="link-btn" data-act="auth-mode" data-k="signin">${icon('arrow-left')}Back to sign in</button>`;
     else if (m === 'mfa') body = head('Two-factor sign-in', 'Enter the 6-digit code from your authenticator app.') + `<form id="auth-mfa" class="auth-form" novalidate>${field('Code', '<input class="input lg mono" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]*" maxlength="6" required autofocus>')}${err(ui)}${btn('Verify')}</form>
         <details class="small muted"><summary>Lost your phone or authenticator?</summary><p>Ask your VoltFleet administrator to reset two-factor sign-in for your account after they’ve confirmed who you are. If you added a backup device, use that instead.</p></details>
         <button type="button" class="link-btn" data-act="auth-signout">${icon('log-out')}Sign out</button>`;
@@ -221,7 +275,7 @@
       body = head(me.confirm ? 'Confirm your authenticator' : 'Confirm it’s you', me.confirm
         ? 'This authenticator hasn’t been confirmed by email yet, so it can’t open your team’s workspace. We’ll email you a one-time sign-in link; open it on this device, then enter a code from your authenticator again.'
         : 'Before you add an authenticator, we email you a one-time sign-in link. That way, someone who only knows your password can’t add their own phone to your account.') +
-        `<form id="auth-mfa-email" class="auth-form" novalidate><p class="small muted">${icon('mail')} The link goes to <strong>${esc((A.account && A.account.email) || ui.email || 'your email address')}</strong>. Open it in this browser.</p>${err(ui)}${ok(ui)}${btn(me.sent ? 'Send the link again' : 'Email me the link')}</form>
+        `<form id="auth-mfa-email" class="auth-form" novalidate><p class="small muted">${icon('mail')} The link goes to <strong>${esc((A.account && A.account.email) || ui.email || 'your email address')}</strong>. Open it in this browser.</p>${captchaSlot()}${err(ui)}${ok(ui)}${btn(me.sent ? 'Send the link again' : 'Email me the link')}</form>
         <details class="small muted"><summary>Didn’t add an authenticator yourself?</summary><p>Someone may know your password. Change it now (Forgot password? on the sign-in page), and ask your VoltFleet administrator to remove authenticators you don’t recognise.</p></details>
         <button type="button" class="link-btn" data-act="auth-signout">${icon('log-out')}Sign out</button>`;
     } else if (m === 'mfa-enroll') body = head('Protect your account', `${ui.staffNote === false ? 'Turn on two-factor sign-in.' : 'Staff accounts need two-factor sign-in: a password plus a code from an app on your phone.'}`) + (ui.enroll ? enrollBox(ui.enroll, 'auth-mfa-enroll') : `${err(ui)}<button type="button" class="btn" data-act="auth-enroll-retry">${icon('refresh-cw')}Try again</button>`) + `<button type="button" class="link-btn" data-act="auth-signout">${icon('log-out')}Sign out</button>`;
@@ -240,9 +294,9 @@
         ${type === 'driver' ? '' : field(type === 'fleet' ? 'Company name' : type === 'operator' ? 'Charging network name' : 'Company name', `<input class="input lg" name="org" autocomplete="organization" maxlength="80" required value="${esc(ui.org || '')}">`)}
         ${onboard ? '' : field('Work email', `<input class="input lg" name="email" type="email" autocomplete="email" required value="${esc(ui.email || '')}">`) + field('Password', '<input class="input lg" name="password" type="password" autocomplete="new-password" minlength="10" required>', 'At least 10 characters. Use a password manager if you can.')}
         ${onboard ? '' : `<label class="check small"><input type="checkbox" name="agree" required ${ui.agree ? 'checked' : ''}>I agree to the terms and the privacy notice, and confirm I’m allowed to add my organisation.</label>`}
-        ${err(ui)}${ok(ui)}${btn(onboard ? 'Create workspace' : 'Create account')}</form>
+        ${onboard ? '' : captchaSlot()}${err(ui)}${ok(ui)}${btn(onboard ? 'Create workspace' : 'Create account')}</form>
         ${onboard ? `<button type="button" class="link-btn" data-act="auth-signout">${icon('log-out')}Sign out</button>` : ''}`;
-    } else if (m === 'check') body = head('Check your email', `We sent a confirmation link to <strong>${esc(ui.email || 'your inbox')}</strong>. Open it on this device to finish creating your account.`) + `${ok(ui)}${err(ui)}<div class="auth-alt"><button type="button" class="btn" data-act="auth-resend">${icon('mail')}Send it again</button><button type="button" class="btn ghost" data-act="auth-mode" data-k="signin">I’ve confirmed: sign in</button></div><p class="small muted">Can’t find it? Check spam, or ask your administrator to allow emails from VoltFleet.</p>`;
+    } else if (m === 'check') body = head('Check your email', `We sent a confirmation link to <strong>${esc(ui.email || 'your inbox')}</strong>. Open it on this device to finish creating your account.`) + `${ok(ui)}${err(ui)}${captchaSlot()}<div class="auth-alt"><button type="button" class="btn" data-act="auth-resend">${icon('mail')}Send it again</button><button type="button" class="btn ghost" data-act="auth-mode" data-k="signin">I’ve confirmed: sign in</button></div><p class="small muted">Can’t find it? Check spam, or ask your administrator to allow emails from VoltFleet.</p>`;
     return body;
   };
   A.foot = (ui) => (ui.mode === 'demo'
@@ -277,24 +331,28 @@
     try {
       if (id === 'auth-signin') {
         if (!emailOk(email) || !d.password) return setErr('Enter your email and password.');
-        busy(); const { error } = await sb.auth.signInWithPassword({ email, password: d.password }); if (error) return setErr(friendly(error));
+        const ct = captchaToken(); if (ct === null) return setErr('Complete the security check first.');
+        busy(); const { error } = await sb.auth.signInWithPassword({ email, password: d.password, options: withCaptcha({}, ct) }); captchaReset(); if (error) return setErr(friendly(error));
         return afterSignIn();
       }
       if (id === 'auth-magic') {
         if (!emailOk(email)) return setErr('Enter a valid email address.');
-        busy(); const { error } = await sb.auth.signInWithOtp({ email, options: { emailRedirectTo: redirect(), shouldCreateUser: false } });
+        const ct = captchaToken(); if (ct === null) return setErr('Complete the security check first.');
+        busy(); const { error } = await sb.auth.signInWithOtp({ email, options: withCaptcha({ emailRedirectTo: redirect(), shouldCreateUser: false }, ct) }); captchaReset();
         return error ? setErr(friendly(error)) : setOk('If that email has an account, a sign-in link is on its way. Open it on this device.');
       }
       if (id === 'auth-mfa-email') {
         const to = String((A.account && A.account.email) || L().email || '').trim().toLowerCase();
         if (!emailOk(to)) return setErr('This account has no email address to confirm. Ask your administrator.');
-        busy(); const { error } = await sb.auth.signInWithOtp({ email: to, options: { emailRedirectTo: redirect(), shouldCreateUser: false } });
+        const ct = captchaToken(); if (ct === null) return setErr('Complete the security check first.');
+        busy(); const { error } = await sb.auth.signInWithOtp({ email: to, options: withCaptcha({ emailRedirectTo: redirect(), shouldCreateUser: false }, ct) }); captchaReset();
         if (error) return setErr(friendly(error));
         L().mfaEmail = Object.assign({}, L().mfaEmail, { sent: true }); return setOk('Link sent. Open it in this browser to continue. It can take a minute to arrive.');
       }
       if (id === 'auth-reset') {
         if (!emailOk(email)) return setErr('Enter a valid email address.');
-        busy(); const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: redirect() });
+        const ct = captchaToken(); if (ct === null) return setErr('Complete the security check first.');
+        busy(); const { error } = await sb.auth.resetPasswordForEmail(email, withCaptcha({ redirectTo: redirect() }, ct)); captchaReset();
         return error ? setErr(friendly(error)) : setOk('If that email has an account, a reset link is on its way.');
       }
       if (id === 'auth-mfa' || id === 'auth-mfa-enroll') {
@@ -314,7 +372,8 @@
       if (id === 'auth-phone') {
         if (!L().phoneSent) {
           const phone = '+' + String(d.phone || '').replace(/[^\d]/g, ''); if (phone.length < 9) return setErr('Enter your phone number with the country code.');
-          busy(); const { error } = await sb.auth.signInWithOtp({ phone }); if (error) return setErr(friendly(error));
+          const ct = captchaToken(); if (ct === null) return setErr('Complete the security check first.');
+          busy(); const { error } = await sb.auth.signInWithOtp(ct ? { phone, options: { captchaToken: ct } } : { phone }); captchaReset(); if (error) return setErr(friendly(error));
           L().phone = phone; L().phoneSent = true; return setOk('Code sent.');
         }
         if (!/^\d{6}$/.test(String(d.code || ''))) return setErr('Enter the 6-digit code.');
@@ -330,8 +389,9 @@
         if (!emailOk(email)) return setErr('Enter a valid email address.');
         if (String(d.password || '').length < 10) return setErr('Use a password of at least 10 characters.');
         if (!d.agree) return setErr('Please accept the terms and privacy notice.');
+        const ct = captchaToken(); if (ct === null) return setErr('Complete the security check first.');
         busy();
-        const { data, error } = await sb.auth.signUp({ email, password: d.password, options: { emailRedirectTo: redirect(), data: { full_name: fullname, account_type: type, org_name: org } } });
+        const { data, error } = await sb.auth.signUp({ email, password: d.password, options: withCaptcha({ emailRedirectTo: redirect(), data: { full_name: fullname, account_type: type, org_name: org } }, ct) }); captchaReset();
         if (error) return setErr(friendly(error));
         if (data && data.session) return afterSignIn();
         A.busy = false; L().mode = 'check'; L().ok = ''; return VF.renderSignin();
@@ -353,11 +413,11 @@
   Object.assign(VF.ACT, {
     'auth-mode': (el) => { Object.assign(L(), { mode: el.dataset.k, error: '', ok: '', phoneSent: false }); if (el.dataset.k === 'demo' && VF.startDemoSync) VF.startDemoSync(); VF.renderSignin(); },
     'auth-type': (el) => { const f = el.closest('form'); if (f) { const n = f.querySelector('[name="org"]'); if (n) L().org = n.value; const fn = f.querySelector('[name="fullname"]'); if (fn) L().fullname = fn.value; const em = f.querySelector('[name="email"]'); if (em) L().email = em.value; } L().type = el.dataset.k; VF.renderSignin(); },
-    'auth-resend': async () => { const email = L().email; if (!email) return; const { error } = await sb.auth.resend({ type: 'signup', email, options: { emailRedirectTo: redirect() } }); if (error) setErr(friendly(error)); else setOk('Sent again. It can take a minute to arrive.'); },
+    'auth-resend': async () => { const email = L().email; if (!email) return; const ct = captchaToken(); if (ct === null) return setErr('Complete the security check first.'); const { error } = await sb.auth.resend({ type: 'signup', email, options: withCaptcha({ emailRedirectTo: redirect() }, ct) }); captchaReset(); if (error) setErr(friendly(error)); else setOk('Sent again. It can take a minute to arrive.'); },
     'auth-signout': () => A.signOut(false),
     'auth-invite-accept': async (el) => { if (A.busy) return; A.busy = true; L().error = ''; VF.renderSignin(); try { await afterSignIn(await rpc('accept_invite', { p_id: el.dataset.id })); } catch (e) { A.busy = false; L().error = friendly(e); VF.renderSignin(); } },
     'auth-invite-decline': async (el) => { if (A.busy) return; A.busy = true; L().error = ''; VF.renderSignin(); try { await afterSignIn(await rpc('decline_invite', { p_id: el.dataset.id })); } catch (e) { A.busy = false; L().error = friendly(e); VF.renderSignin(); } },
-    'acct-leave': async () => { if (!await VF.c.confirm({ title: 'Leave this organisation?', body: 'You lose access to its workspace straight away. Your login stays; you can join or create another organisation.', confirmLabel: 'Leave', danger: true })) return openAccount(); try { await rpc('leave_organization'); VF.toast('You left the organisation'); setTimeout(() => A.signOut(false), 600); } catch (e) { VF.toast(e.message); } },
+    'acct-leave': async () => { if (!await VF.c.confirm({ title: 'Leave this organisation?', body: 'You lose access to its workspace straight away. Your login stays; you can join or create another organisation.', confirmLabel: 'Leave', danger: true })) return openAccount(); try { await scrubMember(A.account && A.account.id, false); await rpc('leave_organization'); VF.toast('You left the organisation'); setTimeout(() => A.signOut(false), 600); } catch (e) { stay(); VF.toast(e.message); } },
     'auth-enroll-retry': async () => { await A.startEnroll(); VF.renderSignin(); },
     'auth-copy-secret': (el) => VF.copyText(el.dataset.secret, 'Key'), // waits for the clipboard; falls back, never claims a copy that failed (QA R1-14)
     'acct-mfa-add': async () => { try { A.acctEnroll = await newFactor(); } catch (e) { A.acctEnroll = null; return acctErr(friendly(e)); } openAccount(); },
@@ -378,12 +438,12 @@
     'auth-acct': () => openAccount(),
     'acct-invite': async () => { const i = document.getElementById('acct-invite-email'); const v = i ? i.value.trim() : ''; try { A.account = await rpc('invite_member', { p_email: v }); VF.toast('Invitation saved'); openAccount(); } catch (e) { acctErr(e.message); } },
     'acct-revoke': async (el) => { try { A.account = await rpc('revoke_invite', { p_id: el.dataset.id }); openAccount(); } catch (e) { acctErr(e.message); } },
-    'acct-remove': async (el) => { if (!await VF.c.confirm({ title: 'Remove this person from your organisation?', body: 'They keep their login but lose access to your workspace straight away.', confirmLabel: 'Remove', danger: true })) return openAccount(); try { A.account = await rpc('remove_member', { p_user: el.dataset.id }); openAccount(); } catch (e) { VF.toast(e.message); } },
+    'acct-remove': async (el) => { if (!await VF.c.confirm({ title: 'Remove this person from your organisation?', body: 'They keep their login but lose access to your workspace straight away.', confirmLabel: 'Remove', danger: true })) return openAccount(); try { A.account = await rpc('remove_member', { p_user: el.dataset.id }); await scrubMember(el.dataset.id, false); openAccount(); } catch (e) { VF.toast(e.message); } },
     'acct-password': async () => { const i = document.getElementById('acct-new-pass'); const v = i ? i.value : ''; if (v.length < 10) return acctErr('Use at least 10 characters.'); const { error } = await sb.auth.updateUser({ password: v }); if (error) return acctErr(friendly(error)); VF.toast('Password changed'); openAccount(); },
     'acct-signout-all': async () => { if (!await VF.c.confirm({ title: 'Sign out everywhere?', body: 'Every device signed in to your account is signed out, including this one.', confirmLabel: 'Sign out everywhere' })) return; A.signOut(true); },
     'acct-delete': async () => {
       if (!await VF.c.confirm({ title: 'Delete your account?', body: 'Your login and profile are erased now. If nobody else is in your organisation, its workspace is deleted too. This can’t be undone.', confirmLabel: 'Delete my account', danger: true })) return;
-      try { await rpc('delete_my_account'); VF.toast('Account deleted'); setTimeout(() => A.signOut(false), 600); } catch (e) { VF.toast(e.message); }
+      try { await scrubMember(A.account && A.account.id, true); await rpc('delete_my_account'); VF.toast('Account deleted'); setTimeout(() => A.signOut(false), 600); } catch (e) { stay(); VF.toast(e.message); }
     },
   });
 

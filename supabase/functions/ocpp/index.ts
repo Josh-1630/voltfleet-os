@@ -6,6 +6,11 @@ import postgres from 'npm:postgres@3.4.5';
 import { handleRequest, sessionUser, type ApiStore } from './server.ts';
 
 const sql = postgres(Deno.env.get('SUPABASE_DB_URL')!, { prepare: false, max: 4, idle_timeout: 20 });
+// QA round 4 (R3-15): server-side retention runs inside the database, at most hourly (private.purge_expired, from
+// migration 20261119_retention.sql). This only gives it a chance to run; it never waits for it, and before that
+// migration is applied the call fails and is ignored.
+let purgeAt = 0;
+const purge = () => { const t = Date.now(); if (t - purgeAt < 3_600_000) return; purgeAt = t; sql`select private.purge_expired(false)`.then(() => {}, () => {}); };
 const t = (x: Date | string | null | undefined) => (x ? new Date(x).getTime() : null);
 const d = (ms: number | null | undefined) => (ms == null ? null : new Date(ms));
 const cpRow = (r: any) => ({ id: r.id, networkId: r.network_id, label: r.label, passwordHash: r.password_hash, authMode: r.auth_mode, vendor: r.vendor, model: r.model, serial: r.serial, firmware: r.firmware, status: r.status, bootAt: t(r.boot_at), lastSeen: t(r.last_seen), connected: r.connected, instance: r.instance, createdAt: t(r.created_at) });
@@ -47,7 +52,7 @@ const store: ApiStore = {
   async log(cpId, dir, kind, action, payload) {
     const p = JSON.stringify(payload ?? null); const body = p.length > 4000 ? { truncated: true, size: p.length } : payload ?? null;
     await sql`insert into private.ocpp_log (cp_id, dir, kind, action, payload) values (${cpId}, ${dir}, ${kind}, ${action}, ${sql.json(body as any)})`;
-    if (++logCount % 200 === 0) await sql`delete from private.ocpp_log where at < now() - interval '7 days'`; // keep a week
+    if (++logCount % 200 === 0) { await sql`delete from private.ocpp_log where at < now() - interval '7 days'`; purge(); } // keep a week
   },
   // created_by comes with migration 20261117_edge_limits.sql; until it is applied, fall back to the old behaviour.
   async createNetwork(keyHash, name, createdBy) {

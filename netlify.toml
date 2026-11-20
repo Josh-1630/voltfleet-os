@@ -14,4 +14,7 @@
     Strict-Transport-Security = "max-age=31536000; includeSubDomains"
     X-Content-Type-Options = "nosniff"
     Referrer-Policy = "strict-origin-when-cross-origin"
-    Permissions-Policy = "geolocation=(), camera=(), microphone=(), payment=(), usb=(), interest-cohort=()"
+    # The app uses no geolocation, camera or microphone today (positions are simulated or come from Smartcar on the
+    # server; car photos are bundled). If a feature starts using one, allow it for this site only, e.g. geolocation=(self).
+    # browsing-topics replaces the retired interest-cohort, which browsers now report as an unknown feature.
+    Permissions-Policy = "geolocation=(), camera=(), microphone=(), payment=(), usb=(), browsing-topics=()"

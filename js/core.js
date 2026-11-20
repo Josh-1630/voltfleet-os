@@ -308,7 +308,7 @@ window.VF = (function () {
     const s = {
       version: 2, seq: 1000,
       clock: { t: now, speed: 20, paused: false },
-      settings: { currency: 'GHS', tz: 0, reserve: 10, retention: { sessions: 730, eta: 1, audit: 2555, deletedAccount: 30 }, kAnon: 3 },
+      settings: { currency: 'GHS', tz: 0, reserve: 10, retention: { sessions: 2190, eta: 1, audit: 2555, deletedAccount: 30 }, kAnon: 3 },
       operators, stations, users, drivers, vehicles,
       bookings: [], sessions: [], alerts: [], audit: [], ocpp: [], requests: [], notices: [],
     };
@@ -837,7 +837,7 @@ window.VF = (function () {
   const SAFE_CH = { '<': '‹', '>': '›', '"': '”', '`': 'ʹ', "'": '’' };
   // Fields that are always numbers: a string here (e.g. "100%;position:fixed…") is turned back into a number, so it
   // can't restyle a page through style="width:…%" or break calculations (QA R1-12).
-  const NUM_KEYS = new Set(['soc', 'score', 'eco', 'targetSoc', 'kw', 'kwh', 'price', 'cost', 'odo', 'km', 'lat', 'lon', 'amount', 'speed', 'tz', 'reserve', 'rev', 'seq', 'socStart', 'socEnd', 'soh', 'eff', 'start', 'end', 't', 'at', 'bessKwh', 'gensetKw', 'minutes', 'fee', 'balance']);
+  const NUM_KEYS = new Set(['soc', 'score', 'eco', 'targetSoc', 'kw', 'kwh', 'price', 'cost', 'odo', 'km', 'lat', 'lon', 'amount', 'speed', 'tz', 'reserve', 'rev', 'seq', 'socStart', 'socEnd', 'soh', 'eff', 'start', 'end', 't', 'at', 'bessKwh', 'gensetKw', 'minutes', 'fee', 'balance', 'carry', 'carryAt']);
   VF.sanitizeState = function (st) {
     const seen = new Set();
     const walk = (o, depth) => {
@@ -866,10 +866,28 @@ window.VF = (function () {
     st.stations = st.stations.filter((s) => s && VF.PLACES[s.node] && ops.has(s.operatorId) && Array.isArray(s.connectors));
     const sts = new Set(st.stations.map((x) => x.id));
     st.sessions = st.sessions.filter((x) => x && sts.has(x.stationId)); st.bookings = st.bookings.filter((x) => x && sts.has(x.stationId));
+    // QA R4-02: a vehicle of an unknown model (or at an unknown place) breaks every page and the simulation that does
+    // range maths with it (VF.MODELS[model].eff), so it is dropped like any other record the app can't show.
+    const model = (m) => typeof m === 'string' && Object.prototype.hasOwnProperty.call(VF.MODELS, m);
+    st.vehicles = st.vehicles.filter((v) => v && (!v.node || VF.PLACES[v.node]) && model(v.model));
     const drivers = new Set(st.drivers.map((d) => d && d.id)); const withCar = new Set(st.vehicles.map((v) => v && v.driverId));
     const orgs = new Set(((st.connect && st.connect.orgs) || []).map((o) => o.id));
     st.users = st.users.filter((u) => u && (u.role !== 'driver' || (drivers.has(u.driverId) && withCar.has(u.driverId))) && (u.role !== 'operator' || ops.has(u.operatorId)) && (u.role !== 'developer' || !st.connect || orgs.has(u.orgId)));
-    st.vehicles = st.vehicles.filter((v) => v && (!v.node || VF.PLACES[v.node]));
+    const f = st.fleet;
+    if (f !== undefined && f !== null) {
+      // The fleet (EV Manager): unusable lists mean a fresh sample fleet (VF.ensureFleet); otherwise dangling links are cut.
+      const ok = typeof f === 'object' && ['vehicles', 'drivers', 'depots'].every((k) => Array.isArray(f[k])) && f.org && typeof f.org === 'object';
+      const depots = ok ? f.depots.filter((d) => d && d.id && VF.PLACES[d.node]) : [];
+      if (!ok || !depots.length) delete st.fleet;
+      else {
+        f.depots = depots; const dep = new Set(depots.map((d) => d.id));
+        f.vehicles = f.vehicles.filter((v) => v && v.id && model(v.model) && (!v.node || VF.PLACES[v.node]));
+        f.drivers = f.drivers.filter((d) => d && d.id);
+        const vs = new Set(f.vehicles.map((v) => v.id)), ds = new Set(f.drivers.map((d) => d.id));
+        for (const v of f.vehicles) { if (!dep.has(v.depot)) v.depot = depots[0].id; if (v.driverId != null && !ds.has(v.driverId)) v.driverId = null; if (!Array.isArray(v.maintenance)) v.maintenance = []; }
+        for (const d of f.drivers) if (d.vehicleId != null && !vs.has(d.vehicleId)) d.vehicleId = null;
+      }
+    }
     return true;
   };
   VF.load = function () {

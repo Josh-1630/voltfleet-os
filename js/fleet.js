@@ -276,6 +276,7 @@
     assign(vehicleId, driverId) {
       const v = VF.fleetVehicle(vehicleId); if (!v || v.real) return;
       if (v.driverId) { const old = VF.fleetDriver(v.driverId); if (old) old.vehicleId = null; }
+      if (driverId && !VF.fleetDriver(driverId)) return; // gone meanwhile (another device removed them)
       if (driverId) { const d = VF.fleetDriver(driverId); if (d.vehicleId) { const ov = VF.fleetVehicle(d.vehicleId); if (ov) ov.driverId = null; } d.vehicleId = v.id; v.driverId = d.id; } else v.driverId = null;
     },
     addDriver(d) { const f = F(); const dr = { id: 'fd' + (f.seq++) + Math.floor(Math.random() * 90 + 10), name: d.name, phone: d.phone, license: d.license.toUpperCase(), hired: VF.now(), score: 80, vehicleId: null }; f.drivers.push(dr); return dr; },

@@ -69,6 +69,7 @@
       </section>
     </div>`;
     startAuthArt();
+    if (VF.auth && VF.auth.mountCaptcha) VF.auth.mountCaptcha(); // optional CAPTCHA (off unless configured)
   }
   function signInByEmail() {
     const email = ($('#login-email').value || '').trim().toLowerCase();
@@ -467,7 +468,7 @@
     const startDemo = () => { VF.mode = 'demo'; routeChange(); if (VF.session || loginUi.mode === 'demo' || (!(VF.auth && VF.auth.enabled) && !loginUi.mode)) VF.startDemoSync(); };
     if (VF.auth && VF.auth.enabled) {
       $('#root').innerHTML = '<div class="boot-splash" role="status"><span class="spinner"></span><span>Opening VoltFleet…</span></div>';
-      VF.auth.init().then(async (acct) => {
+      VF.authReady = VF.auth.init().then(async (acct) => {
         const step = await VF.auth.next(acct);
         if (step === 'enter') { await VF.auth.enter(acct); routeChange(); return; }
         if (VF.session && VF.session.account) VF.session = null; // the account session ended: never fall back into the demo as that person

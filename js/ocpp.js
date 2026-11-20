@@ -12,8 +12,23 @@
   const WS = FN.replace(/^http/, 'ws');
   const STORE = 'voltfleet-os:ocpp', PW = 'voltfleet-os:ocpp-pw';
   const O = VF.ocppNet = { fn: FN, ws: WS, key: null, name: '', data: null, error: '', lastPoll: 0, polling: false, sim: null, simLog: [], simCp: '', simState: 'offline' };
-  try { const s = JSON.parse(localStorage.getItem(STORE) || 'null'); if (s) { O.key = s.key; O.name = s.name || ''; } } catch (e) { /* none */ }
-  const persist = () => { try { if (O.key) localStorage.setItem(STORE, JSON.stringify({ key: O.key, name: O.name })); else localStorage.removeItem(STORE); } catch (e) { /* blocked */ } };
+  // QA R4-01: a network key belongs to the account (or the demo) that created it on this browser. Another account, or
+  // the demo, on the same browser never loads it. It isn't wiped at sign-out because it can't be recovered (only a hash
+  // is kept on the server). The top-level fields keep the demo's key for app versions cached before this change.
+  const owner = () => (VF.mode === 'account' && VF.auth && VF.auth.account && VF.auth.account.id ? 'acct:' + VF.auth.account.id : 'demo');
+  let byOwner = {}; O.owner = null;
+  try { const s = JSON.parse(localStorage.getItem(STORE) || 'null'); if (s && typeof s === 'object') byOwner = s.byOwner && typeof s.byOwner === 'object' && !Array.isArray(s.byOwner) ? s.byOwner : s.key ? { demo: { key: s.key, name: s.name || '' } } : {}; } catch (e) { /* none */ }
+  O.sync = () => {
+    const o = owner(); if (O.owner === o) return; O.owner = o;
+    const s = Object.prototype.hasOwnProperty.call(byOwner, o) && byOwner[o] && typeof byOwner[o] === 'object' ? byOwner[o] : {};
+    O.key = typeof s.key === 'string' ? s.key : null; O.name = typeof s.name === 'string' ? s.name : ''; O.data = null; O.error = '';
+  };
+  const persist = () => {
+    if (O.owner === null) O.sync();
+    if (O.key) byOwner[O.owner] = { key: O.key, name: O.name }; else delete byOwner[O.owner];
+    const demo = byOwner.demo || {};
+    try { if (Object.keys(byOwner).length) localStorage.setItem(STORE, JSON.stringify({ byOwner, key: demo.key || null, name: demo.name || '' })); else localStorage.removeItem(STORE); } catch (e) { /* blocked */ }
+  };
   // Charger passwords are shown once; this tab remembers them only so the simulator can use them.
   const pwGet = (id) => { try { return JSON.parse(sessionStorage.getItem(PW) || '{}')[id] || ''; } catch (e) { return ''; } };
   const pwSet = (id, pw) => { try { const m = JSON.parse(sessionStorage.getItem(PW) || '{}'); m[id] = pw; sessionStorage.setItem(PW, JSON.stringify(m)); } catch (e) { /* not kept */ } };
@@ -28,6 +43,7 @@
     return j;
   }
   O.poll = async () => {
+    O.sync();
     if (!O.key || O.polling) return;
     O.polling = true;
     try { O.data = await call('network', { key: O.key, logLimit: 80 }); O.error = ''; O.name = O.data.network.name; }
@@ -38,7 +54,7 @@
     try { const r = await call('command', { key: O.key, id, command, payload }); VF.toast(`${label || command} sent${r.online ? '' : ' (queued until the charger connects)'}`); O.poll(); }
     catch (e) { VF.toast(e.message); }
   };
-  setInterval(() => { if (O.key && VF.route() === 'op-ocpp' && !document.hidden && Date.now() - O.lastPoll > 2500) O.poll(); }, 1000);
+  setInterval(() => { if (VF.route() === 'op-ocpp') O.sync(); if (O.key && VF.route() === 'op-ocpp' && !document.hidden && Date.now() - O.lastPoll > 2500) O.poll(); }, 1000);
 
   // ---------------------------------------------------------------- formatting
   const TONE = { Available: 'ok', Charging: 'mint', Preparing: 'teal', Finishing: 'teal', SuspendedEV: 'warn', SuspendedEVSE: 'warn', Reserved: 'teal', Unavailable: 'muted', Faulted: 'bad' };
@@ -124,6 +140,7 @@
   }
   const simLogHTML = () => O.simLog.slice(-6).reverse().map((e) => `<div><span class="faint">${time(e.at)}</span> ${esc(e.text)}</div>`).join('') || '<span class="faint">Simulator events appear here.</span>';
   function pageOcpp() {
+    O.sync();
     if (!FN) return C.card({}, C.empty({ icon: 'cloud', title: 'Cloud functions are not configured', text: 'Set the Supabase URL in js/config.js to connect real chargers.' }));
     if (!O.key) return intro();
     if (!O.data) { if (!O.polling) O.poll().then(() => VF.rerender()); return C.card({}, O.error ? C.empty({ icon: 'triangle-alert', title: 'Could not load the network', text: O.error, action: '<button class="btn" data-act="oc-retry">Try again</button>' }) : C.skeleton(4)); }
