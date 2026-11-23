@@ -34,7 +34,7 @@ const TESTS = {
   'a11y': { ...e2e('a11y'), empty: true },
   'a11y-r3': { ...e2e('a11y-r3'), ...has(/no violations on the round-3 screens/), mustNot: [/unexpected screen/] },
   // round 3-4
-  'robust': e2e('robust'), 'ocpp-recover': e2e('ocpp-recover'), 'map-privacy': e2e('map-privacy'), 'dashboard-links': e2e('dashboard-links'),
+  'robust': e2e('robust'), 'ocpp-recover': e2e('ocpp-recover'), 'map-privacy': e2e('map-privacy'), 'dashboard-links': e2e('dashboard-links'), 'slow-load': e2e('slow-load'),
   'heads': e2e('heads'), 'r3-app': e2e('r3-app'), 'r4-app': e2e('r4-app'), 'signout': e2e('signout'),
   'patch': { cmd: 'node', args: [path.join(T, 'unit', 'patch.js')] },
   'fn-smartcar-r2': mts('smartcar-r2'), 'fn-smartcar-r3': mts('smartcar-r3'), 'fn-ocpp': mts('ocpp'),
@@ -66,6 +66,8 @@ function runOne(name) {
       const why = judge(name, t, code, out); const passes = (out.match(/^PASS\b/gm) || []).length;
       console.log(`${why.length ? 'FAIL' : 'ok  '}  ${name.padEnd(16)} ${String(passes).padStart(3)} checks  ${((Date.now() - started) / 1000).toFixed(0)}s`);
       for (const w of why.slice(0, 8)) console.log('        ' + w.slice(0, 300));
+      // A crash (exit code without FAIL lines) is easiest to fix with its last lines in the CI log itself.
+      if (code !== 0) for (const l of out.split('\n').filter((x) => x.trim() && !/^PASS\b/.test(x)).slice(-12)) console.log('        | ' + l.slice(0, 240));
       resolve(why.length === 0);
     });
   });

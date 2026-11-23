@@ -50,13 +50,14 @@ const ok = (c, m) => console.log((c ? 'PASS ' : 'FAIL ') + m);
   // Controls inside a card keep working and don't navigate
   await home(); await p.click('[data-act="m-dash-days"][data-k="30"]'); await p.waitForTimeout(500);
   ok((await route()) === 'm-dashboard' && (await p.evaluate(() => VF.mgr.ui.dashDays)) === 30, 'the 7/30-day switch changes the chart and stays on the dashboard');
-  await home(); const row = await p.$('.att-list li[data-act="m-open-vehicle"]');
-  if (row) { await row.click(); await p.waitForTimeout(600); ok((await route()) === 'm-vehicle', 'a “Needs attention” item still opens that vehicle'); } else ok(true, 'no attention items to click (skipped)');
+  await home(); const row = p.locator('.att-list li[data-act="m-open-vehicle"]').first();
+  if (await row.count()) { await clickIn(row, (r) => ({ x: r.w / 2, y: r.h / 2 })); await p.waitForTimeout(600); ok((await route()) === 'm-vehicle', 'a “Needs attention” item still opens that vehicle'); } else ok(true, 'no attention items to click (skipped)');
   await home(); const qa = p.locator('.quick-grid button[data-act="m-add-vehicle"]'); await qa.click(); await p.waitForTimeout(400);
   ok((await route()) === 'm-dashboard' && await p.evaluate(() => !document.getElementById('dialog').hidden), 'quick actions still open their dialog');
   await p.keyboard.press('Escape');
-  await home(); await clickIn(p.locator('.map-wrap').first(), (r) => ({ x: r.w / 2, y: r.h / 2 })); await p.waitForTimeout(500);
-  ok((await route()) === 'm-dashboard', 'clicking the map doesn’t leave the dashboard');
+  // Click the map's background (markers open their vehicle or station on purpose, and they move).
+  await home(); await p.evaluate(() => { const w = document.querySelector('.map-wrap'); const bg = w.querySelector('svg, .lmap') || w; bg.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })); }); await p.waitForTimeout(500);
+  ok((await route()) === 'm-dashboard', 'clicking the map doesn’t leave the dashboard (' + await route() + ')');
   // Keyboard: the links are reachable and work with Enter
   await home(); await p.focus('a.stat-card.kpi >> nth=4'); await p.keyboard.press('Enter'); await p.waitForTimeout(600);
   ok((await route()) === 'm-finance', 'Enter on a focused tile opens its page');
@@ -85,8 +86,8 @@ const ok = (c, m) => console.log((c ? 'PASS ' : 'FAIL ') + m);
   await clickIn(stCard, (r) => ({ x: r.w - 30, y: 70 }));
   await p.waitForTimeout(600);
   ok((await route()) === 'op-stations' && (await p.evaluate(() => VF.ui.operator ? VF.ui.operator.station : null)) === st2, `clicking a station card opens Stations with that station selected (${st2})`);
-  await opHome(); const btn = await p.$('[data-op-station] [data-act]:not([data-act="op-open"])');
-  if (btn) { const r0 = await route(); await btn.evaluate((b) => b.click()); await p.waitForTimeout(500); const r1 = await route(); await p.keyboard.press('Escape'); ok(r1 === 'op-live', 'a connector button inside a station card runs its own action and doesn’t leave the page (' + r0 + ' → ' + r1 + ')'); }
+  await opHome(); const btn = p.locator('[data-op-station] [data-act]:not([data-act="op-open"])').first();
+  if (await btn.count()) { const r0 = await route(); for (let i = 0; i < 4; i++) { try { await btn.evaluate((b) => b.click(), null, { timeout: 3000 }); break; } catch (e) { await p.waitForTimeout(300); } } await p.waitForTimeout(500); const r1 = await route(); await p.keyboard.press('Escape'); ok(r1 === 'op-live', 'a connector button inside a station card runs its own action and doesn’t leave the page (' + r0 + ' → ' + r1 + ')'); }
   // ================================================================ admin: Platform overview
   await as('admin');
   const adHome = async () => { await p.evaluate(() => { location.hash = 'ad-overview'; }); await p.waitForTimeout(700); };
@@ -101,7 +102,7 @@ const ok = (c, m) => console.log((c ? 'PASS ' : 'FAIL ') + m);
   await adHome(); const sh = p.locator('section.card-go', { has: p.locator('a.card-link', { hasText: 'System health' }) });
   await clickIn(sh, (r) => ({ x: r.w / 2, y: r.h - 20 })); await p.waitForTimeout(600);
   ok((await route()) === 'ad-system', 'clicking inside the System health panel opens System');
-  await adHome(); await clickIn(p.locator('[data-live="ad-map"]'), (r) => ({ x: r.w / 2, y: r.h / 2 })); await p.waitForTimeout(500);
+  await adHome(); await p.evaluate(() => { const w = document.querySelector('[data-live="ad-map"]'); const bg = w.querySelector('svg, .lmap') || w; bg.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })); }); await p.waitForTimeout(500);
   ok((await route()) === 'ad-overview', 'clicking the admin map doesn’t leave the overview');
   await adHome(); const kv = await p.evaluate(() => document.querySelector('a.kpi.go .value') && document.querySelector('a.kpi.go .value').textContent);
   await p.waitForTimeout(2500);

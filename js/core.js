@@ -5,6 +5,9 @@
 'use strict';
 window.VF = (function () {
   const VF = {};
+  // The current page. Defined here, in the first script, because timers in modules that load before app.js
+  // (ocpp.js polls every second) can fire while later scripts are still downloading on a slow connection.
+  VF.route = () => (location.hash || '').slice(1);
 
   // ------------------------------------------------------------------ utilities
   const $ = (s, r = document) => r.querySelector(s);
