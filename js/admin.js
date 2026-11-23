@@ -65,13 +65,13 @@
     const drivers = s.drivers.filter((d) => !d.deleted);
     const linked = s.vehicles.filter((v) => v.linked && v.linked.status === 'connected');
     return [
-      VF.kpi('Stations online', s.stations.filter((x) => x.status === 'online').length, `/ ${s.stations.length}`, `${s.operators.length} operators`),
-      VF.kpi('Connectors free', count('Available'), `/ ${allConns().length}`, `${count('Faulted')} faulted`, count('Faulted') ? 'bad' : ''),
-      VF.kpi('Charging now', count('Charging'), '', `${fmt.n(sum(s.stations, (st) => sum(st.connectors, (c) => (c.session ? c.session.kw : 0))))} kW network load`),
-      VF.kpi('Bookings today', s.bookings.filter((b) => b.createdAt >= day0 || b.start >= day0).length, '', `${s.bookings.filter((b) => b.status === 'confirmed').length} upcoming`),
-      VF.kpi('Energy today', fmt.n(t.kwh), 'kWh', `${t.sessions} sessions`),
-      VF.kpi('Network revenue', fmt.money(t.revenue, 0), '', 'today, all operators'),
-      VF.kpi('Drivers', drivers.length, '', `${linked.length} vehicles connected`),
+      VF.kpi('Stations online', s.stations.filter((x) => x.status === 'online').length, `/ ${s.stations.length}`, `${s.operators.length} operators`, '', '#ad-network'),
+      VF.kpi('Connectors free', count('Available'), `/ ${allConns().length}`, `${count('Faulted')} faulted`, count('Faulted') ? 'bad' : '', '#ad-network'),
+      VF.kpi('Charging now', count('Charging'), '', `${fmt.n(sum(s.stations, (st) => sum(st.connectors, (c) => (c.session ? c.session.kw : 0))))} kW network load`, '', '#ad-network'),
+      VF.kpi('Bookings today', s.bookings.filter((b) => b.createdAt >= day0 || b.start >= day0).length, '', `${s.bookings.filter((b) => b.status === 'confirmed').length} upcoming`, '', '#ad-network'),
+      VF.kpi('Energy today', fmt.n(t.kwh), 'kWh', `${t.sessions} sessions`, '', '#ad-network'),
+      VF.kpi('Network revenue', fmt.money(t.revenue, 0), '', 'today, all operators', '', '#ad-network'),
+      VF.kpi('Drivers', drivers.length, '', `${linked.length} vehicles connected`, '', '#ad-users'),
     ].join('');
   }
 
@@ -84,12 +84,12 @@
     const open = s.alerts.filter((a) => !a.resolved).slice(0, 6);
     return `<section class="kpis kpis-7" data-live="ad-kpis">${kpis()}</section>
       <div class="grid g-main">
-        <section class="panel"><div class="panel-head"><div><h2>Network map</h2><div class="sub">Stations by live status. Circles count drivers booked to arrive within the hour, shown only where ${s.settings.kAnon} or more.</div></div>
+        <section class="panel card-go"${VF.c.goPanel('#ad-network')}><div class="panel-head"><div><h2>${VF.c.goTitle('#ad-network', 'Network map')}</h2><div class="sub">Stations by live status. Circles count drivers booked to arrive within the hour, shown only where ${s.settings.kAnon} or more.</div></div>
           <div class="legend"><span><i class="lg avail"></i>Free connectors</span><span><i class="lg busy"></i>All busy</span><span><i class="lg fault"></i>Has a fault</span><span><i class="lg off"></i>Offline</span></div></div>
           <div class="panel-body"><div class="map-wrap" data-live="ad-map">${mapHTML()}</div></div></section>
         <div class="stack">
-          <section class="panel"><div class="panel-head"><h2>Operators</h2></div><div class="table-wrap"><table class="t"><thead><tr><th>Operator</th><th class="r">Stations</th><th class="r">In use</th><th class="r">Today</th></tr></thead><tbody data-live="ad-ops">${opsRows()}</tbody></table></div></section>
-          <section class="panel"><div class="panel-head"><h2>System health</h2></div><div class="panel-body"><ul class="plain-list">
+          <section class="panel card-go"${VF.c.goPanel('#ad-network')}><div class="panel-head"><h2>${VF.c.goTitle('#ad-network', 'Operators')}</h2></div><div class="table-wrap"><table class="t"><thead><tr><th>Operator</th><th class="r">Stations</th><th class="r">In use</th><th class="r">Today</th></tr></thead><tbody data-live="ad-ops">${opsRows()}</tbody></table></div></section>
+          <section class="panel card-go"${VF.c.goPanel('#ad-system')}><div class="panel-head"><h2>${VF.c.goTitle('#ad-system', 'System health')}</h2></div><div class="panel-body"><ul class="plain-list">
             <li><span>OCPP central system</span>${pill('ok', `${s.stations.filter((x) => x.status === 'online').length}/${s.stations.length} connected`)}</li>
             <li><span>Booking engine</span>${pill('ok', 'Running')}</li>
             <li><span>Vehicle data adapters</span>${pill('warn', `${VF.OEMS.filter((o) => o.status === 'pilot').length} pilot · ${VF.OEMS.filter((o) => o.status === 'planned').length} planned`)}</li>
@@ -99,7 +99,7 @@
         </div>
       </div>
       <div class="grid g-2">
-        <section class="panel"><div class="panel-head"><div><h2>Sessions by vehicle make</h2><div class="sub">Today, across all operators</div></div></div><div class="panel-body stack">${Object.entries(oem).sort((a, b) => b[1] - a[1]).map(([k, n]) => `<div class="hbar"><span>${esc(k)}</span><div class="meter"><i style="width:${n / oemMax * 100}%"></i></div><span class="num">${n}</span></div>`).join('')}</div></section>
+        <section class="panel card-go"${VF.c.goPanel('#ad-vehicles')}><div class="panel-head"><div><h2>${VF.c.goTitle('#ad-vehicles', 'Sessions by vehicle make')}</h2><div class="sub">Today, across all operators</div></div></div><div class="panel-body stack">${Object.entries(oem).sort((a, b) => b[1] - a[1]).map(([k, n]) => `<div class="hbar"><span>${esc(k)}</span><div class="meter"><i style="width:${n / oemMax * 100}%"></i></div><span class="num">${n}</span></div>`).join('')}</div></section>
         <section class="panel"><div class="panel-head"><h2>Open alerts</h2><span class="faint small">all operators and platform</span></div><div>${open.length ? open.map((a) => VF.alertItem(a)).join('') : '<div class="empty">Nothing open.</div>'}</div></section>
       </div>`;
   }

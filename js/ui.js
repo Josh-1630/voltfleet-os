@@ -35,9 +35,14 @@
     const o = typeof opts === 'string' ? { title: opts } : opts;
     // o.href (an in-app '#page'): the title becomes a link and a click anywhere on the card that isn't a control opens
     // that page (app.js), so a dashboard card leads to where its numbers come from.
-    const href = typeof o.href === 'string' && /^#[a-z0-9-]+$/.test(o.href) ? o.href : '';
-    return `<section class="card ${o.cls || ''}${href ? ' card-go' : ''}"${o.id ? ` id="${o.id}"` : ''}${href ? ` data-href="${href}"` : ''}>${o.title ? `<header class="card-head"><div class="card-titles"><h3>${href ? `<a class="card-link" href="${href}">${o.title}<span class="card-link-go" aria-hidden="true">${VF.icon('arrow-right')}</span></a>` : o.title}</h3>${o.sub ? `<p class="card-sub">${o.sub}</p>` : ''}</div>${o.action ? `<div class="card-tools">${o.action}</div>` : ''}</header>` : ''}${body}</section>`;
+    const href = C.goHref(o.href);
+    return `<section class="card ${o.cls || ''}${href ? ' card-go' : ''}"${o.id ? ` id="${o.id}"` : ''}${href ? ` data-href="${href}"` : ''}>${o.title ? `<header class="card-head"><div class="card-titles"><h3>${href ? C.goTitle(href, o.title) : o.title}</h3>${o.sub ? `<p class="card-sub">${o.sub}</p>` : ''}</div>${o.action ? `<div class="card-tools">${o.action}</div>` : ''}</header>` : ''}${body}</section>`;
   };
+  // Links from dashboards to the page behind a tile or panel. Only in-app '#page' targets are accepted.
+  C.goHref = (h) => (typeof h === 'string' && /^#[a-z0-9-]+$/.test(h) ? h : '');
+  C.goTitle = (href, title) => `<a class="card-link" href="${href}">${title}<span class="card-link-go" aria-hidden="true">${VF.icon('arrow-right')}</span></a>`;
+  // A whole panel that opens a page when clicked outside its own controls (handled in app.js).
+  C.goPanel = (href) => (C.goHref(href) ? ` data-href="${href}"` : '');
   // Metric card: icon, big number, label, and a comparison when one is meaningful.
   C.stat = (o) => {
     const trend = o.trend ? `<span class="trend ${o.trend.good === true ? 'good' : o.trend.good === false ? 'bad' : 'neutral'}">${VF.icon(o.trend.dir === 'up' ? 'trending-up' : 'trending-down')}${esc(o.trend.text)}</span>` : '';

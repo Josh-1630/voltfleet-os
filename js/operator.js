@@ -51,10 +51,12 @@
     else detail = `<div class="small faint">${c.status === 'Finishing' ? 'Vehicle unplugging' : 'No booking in the next hours'}</div>`;
     return `<div class="conn-row${se && c.status === 'Charging' ? ' is-charging' : ''}"><div class="conn-id"><strong>${esc(c.label)}</strong><span class="faint small">${esc(c.type)} · ${c.kw} kW</span></div><div class="conn-status">${VF.connPill(c)}</div><div class="conn-detail">${detail}</div><div class="conn-act">${actions(c)}</div></div>`;
   }
+  // A click on a station card (outside its buttons) opens Stations with that station selected.
+  document.addEventListener('click', (e) => { const c = e.target.closest && e.target.closest('[data-op-station]'); if (c && mine(c.dataset.opStation)) ui.station = c.dataset.opStation; }, true);
   function stationCard(st) {
     const load = stationLoad(st);
     const samples = (VF.loadSamples[st.id] || []).map((x) => x.kw);
-    return `<section class="panel st-card">
+    return `<section class="panel st-card card-go"${VF.c.goPanel('#op-stations')} data-op-station="${st.id}">
       <div class="st-head"><div><button class="link-btn" data-act="op-open" data-id="${st.id}"><h3>${esc(st.name)}</h3></button><div class="faint small">${esc(VF.PLACES[st.node].name)} · ${st.lb === 'priority' ? 'Bookings first' : 'Equal share'} load balancing</div></div>
         <div class="st-load"><span class="num"><strong data-live="${st.id}-load" data-tween>${fmt.n(load)}</strong> / ${st.capKw} kW</span><span data-live="${st.id}-spark" class="spark-wrap">${VF.sparkline(samples, 120, 30, st.capKw)}</span></div></div>
       <div class="st-meter${load > 0 ? ' on' : ''}" title="Load ${fmt.n(load)} of ${st.capKw} kW"><i data-live="${st.id}-meter" style="width:${Math.min(100, load / st.capKw * 100).toFixed(1)}%"></i></div>
@@ -75,10 +77,10 @@
     let acc = 0; const cum = Array.from({ length: hrs }, (_, h) => (acc += sum(done.filter((x) => x.end >= day0 + h * HOUR && x.end < day0 + (h + 1) * HOUR), (x) => x.cost)));
     const bad = n('Faulted') + n('Unavailable');
     return [
-      { icon: 'plug', label: 'Available', value: String(n('Available')), unit: `/ ${conns.length}`, hint: 'connectors free now', viz: { dots: conns.map((c) => (c.status === 'Available' ? 'on' : c.status === 'Charging' ? 'chg' : c.status === 'Faulted' || c.status === 'Unavailable' ? 'bad' : c.status === 'Reserved' ? 'res' : '')) } },
-      { icon: 'bolt', label: 'Charging now', value: String(n('Charging')), hint: `${fmt.n(load)} kW of ${fmt.n(cap)} kW`, viz: { ring: conns.length ? n('Charging') / conns.length * 100 : 0, tone: 'mint' } },
-      { icon: 'calendar', label: 'Upcoming bookings', value: String(books.length), hint: `${n('Reserved')} connector${n('Reserved') === 1 ? '' : 's'} held now`, viz: { bars: perHour } },
-      { icon: 'warn', label: 'Faulted', value: String(bad), hint: n('Faulted') ? 'needs attention' : 'all healthy', tone: n('Faulted') ? 'bad' : 'ok', viz: { ring: conns.length ? (conns.length - bad) / conns.length * 100 : 100, tone: bad ? 'warn' : 'teal' } },
+      { href: '#op-stations', icon: 'plug', label: 'Available', value: String(n('Available')), unit: `/ ${conns.length}`, hint: 'connectors free now', viz: { dots: conns.map((c) => (c.status === 'Available' ? 'on' : c.status === 'Charging' ? 'chg' : c.status === 'Faulted' || c.status === 'Unavailable' ? 'bad' : c.status === 'Reserved' ? 'res' : '')) } },
+      { href: '#op-stations', icon: 'bolt', label: 'Charging now', value: String(n('Charging')), hint: `${fmt.n(load)} kW of ${fmt.n(cap)} kW`, viz: { ring: conns.length ? n('Charging') / conns.length * 100 : 0, tone: 'mint' } },
+      { href: '#op-bookings', icon: 'calendar', label: 'Upcoming bookings', value: String(books.length), hint: `${n('Reserved')} connector${n('Reserved') === 1 ? '' : 's'} held now`, viz: { bars: perHour } },
+      { href: '#op-alerts', icon: 'warn', label: 'Faulted', value: String(bad), hint: n('Faulted') ? 'needs attention' : 'all healthy', tone: n('Faulted') ? 'bad' : 'ok', viz: { ring: conns.length ? (conns.length - bad) / conns.length * 100 : 100, tone: bad ? 'warn' : 'teal' } },
       { icon: 'zap', label: 'Energy today', value: fmt.n(t.kwh), unit: 'kWh', hint: `${t.sessions} sessions · per hour`, viz: { spark: series, tone: 'mint' } },
       { icon: 'chart', label: 'Revenue today', value: fmt.money(t.revenue, 0), hint: 'incl. live sessions · building up', viz: { spark: cum, tone: 'teal' } },
     ];
@@ -93,10 +95,10 @@
     return '';
   }
   function kpis() {
-    return kpiData().map((k, i) => `<div class="stat-card kpi ${k.tone === 'bad' ? 'warn' : ''}">
+    return kpiData().map((k, i) => `<a class="stat-card kpi go ${k.tone === 'bad' ? 'warn' : ''}" href="${k.href}">
       <div class="stat-top"><span class="stat-ic">${icon(k.icon)}</span><span class="stat-name">${esc(k.label)}</span></div>
       <div class="kpi-mid"><div class="stat-num"><span data-live="okpi-${i}" data-tween>${k.value}</span>${k.unit ? `<small>${esc(k.unit)}</small>` : ''}</div><div class="kpi-viz">${vizHTML(k.viz, i)}</div></div>
-      <div class="stat-foot"><span class="stat-hint ${k.tone === 'bad' ? 'text-bad' : k.tone === 'ok' ? 'text-ok' : ''}" data-live="okpi-${i}-h">${esc(k.hint)}</span></div></div>`).join('');
+      <div class="stat-foot"><span class="stat-hint ${k.tone === 'bad' ? 'text-bad' : k.tone === 'ok' ? 'text-ok' : ''}" data-live="okpi-${i}-h">${esc(k.hint)}</span></div></a>`).join('');
   }
   function kpiLive(v) {
     kpiData().forEach((k, i) => {
@@ -132,9 +134,9 @@
         <g class="fn grid" transform="translate(${gx},${gy})"><circle class="fn-halo" r="34"/><circle class="fn-core" r="26"/><g transform="translate(-11,-11)" class="fn-ic">${icon('bolt').replace('<svg ', '<svg width="22" height="22" ')}</g></g>
       </svg>
       <div class="hl-stats">
-        <div><span>Load now</span><b><span data-live="op-hload" data-tween>${fmt.n(n.load)}</span> kW</b><small><span data-live="op-hchg">${n.charging}</span> connectors charging</small></div>
-        <div><span>Energy today</span><b><span data-live="op-hkwh" data-tween>${fmt.n(n.kwh)}</span> kWh</b><small>across ${n.sts.length} stations</small></div>
-        <div><span>Revenue today</span><b data-live="op-hrev" data-tween>${fmt.money(n.revenue, 0)}</b><small>incl. live sessions</small></div>
+        <a href="#op-pricing"><span>Load now</span><b><span data-live="op-hload" data-tween>${fmt.n(n.load)}</span> kW</b><small><span data-live="op-hchg">${n.charging}</span> connectors charging</small></a>
+        <a href="#op-reports"><span>Energy today</span><b><span data-live="op-hkwh" data-tween>${fmt.n(n.kwh)}</span> kWh</b><small>across ${n.sts.length} stations</small></a>
+        <a href="#op-reports"><span>Revenue today</span><b data-live="op-hrev" data-tween>${fmt.money(n.revenue, 0)}</b><small>incl. live sessions</small></a>
       </div>
     </section>`;
   }
@@ -172,9 +174,9 @@
       <div class="grid g-main">
         <div class="st-grid">${myStations().map(stationCard).join('')}</div>
         <div class="stack">
-          <section class="panel"><div class="panel-head"><div><h2>Arriving in the next 4 hours</h2><div class="sub">Slots are held for these drivers; walk-ins can't take them</div></div></div>
+          <section class="panel card-go"${VF.c.goPanel('#op-bookings')}><div class="panel-head"><div><h2>${VF.c.goTitle('#op-bookings', 'Arriving in the next 4 hours')}</h2><div class="sub">Slots are held for these drivers; walk-ins can't take them</div></div></div>
             <div class="panel-body">${up.length ? `<ul class="plain-list">${up.slice(0, 10).map(bookingItem).join('')}</ul>` : '<div class="empty">No bookings in the next 4 hours.</div>'}</div></section>
-          <section class="panel"><div class="panel-head"><div><h2>OCPP messages</h2><div class="sub">Live traffic between your chargers and VoltFleet</div></div></div>
+          <section class="panel card-go"${VF.c.goPanel('#op-alerts')}><div class="panel-head"><div><h2>${VF.c.goTitle('#op-alerts', 'OCPP messages')}</h2><div class="sub">Live traffic between your chargers and VoltFleet</div></div></div>
             <div class="panel-body log" data-live="op-log">${ocppList('all')}</div></section>
           <p class="faint small">${icon('lock')} Drivers appear as IDs unique to ${esc(op().name)}. Battery % before arrival and live ETA show only when the driver shares them. Battery % while charging comes from your DC chargers.</p>
         </div>

@@ -954,7 +954,7 @@ window.VF = (function () {
     const cls = soc < 15 ? 'lo' : soc < 35 ? 'mid' : '';
     return `<div class="soc"><div class="soc-bar"><i class="${cls}" style="width:${clamp(soc, 0, 100).toFixed(1)}%"></i>${marker != null ? `<b style="left:${clamp(marker, 0, 100).toFixed(1)}%"></b>` : ''}</div><span class="num">${Math.round(soc)}%</span></div>`;
   };
-  VF.kpi = (label, value, small, hint, cls) => `<div class="kpi"><div class="label">${label}</div><div class="value">${value}${small ? `<small>${small}</small>` : ''}</div><div class="hint ${cls || ''}">${hint || ''}</div></div>`;
+  VF.kpi = (label, value, small, hint, cls, href) => `<${href ? `a href="${href}"` : 'div'} class="kpi${href ? ' go' : ''}"><div class="label">${label}</div><div class="value">${value}${small ? `<small>${small}</small>` : ''}</div><div class="hint ${cls || ''}">${hint || ''}</div></${href ? 'a' : 'div'}>`;
   // Hardening pass: run fn(...args) so that a failure stays contained. If it throws (or its promise rejects), the error
   // is raised again on its own, so it still reaches the console, error monitoring and the test suite, and the caller
   // carries on: the next action, the next simulation step and the save still happen. The person sees one short message.
