@@ -442,6 +442,8 @@
     VF.ensureConnect(); VF.ensureFleet();
     document.addEventListener('click', (e) => {
       if (shellUi.pop && !e.target.closest('.pop, [data-act="bell"], [data-act="acct-menu"], #g-search-box')) closePops();
+      const go = e.target.closest('[data-href]');
+      if (go && !e.target.closest('a, button, input, select, textarea, label, summary, [data-act], [data-chg], [role="button"], .map-wrap, .lmap') && /^#[a-z0-9-]+$/.test(go.dataset.href) && !String(window.getSelection ? window.getSelection() : '')) { location.hash = go.dataset.href; return; }
       const el = e.target.closest('[data-act]');
       if (!el || el.disabled) return;
       const fn = VF.ACT[el.dataset.act];

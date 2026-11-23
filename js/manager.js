@@ -80,14 +80,14 @@
     const c = (st) => vs.filter((v) => v.status === st).length;
     let acc = 0; const co2Series = m14.map((x) => (acc += (x.km * VF.CO2.DIESEL_KG_PER_KM - x.kwh * VF.CO2.GRID_KG_PER_KWH) / 1000));
     return [
-      { icon: 'car-front', label: 'Total vehicles', value: String(vs.length), hint: `${f.drivers.length} drivers · ${f.depots.length} depots`, viz: { seg: [['teal', c('in_use')], ['mint', c('charging') + c('waiting')], ['ok', c('available')], ['warn', c('maintenance')], ['muted', c('offline')]] } },
-      { icon: 'activity', label: 'Active vehicles', value: String(active), unit: `/ ${vs.length}`, hint: `${c('maintenance')} in maintenance · ${c('offline')} offline`, viz: { ring: vs.length ? active / vs.length * 100 : 0, tone: 'teal' } },
-      { icon: 'battery-medium', label: 'Average battery', value: String(Math.round(avg)), unit: '%', hint: low ? `${low} vehicle${low > 1 ? 's' : ''} below 20%` : 'All vehicles above 20%', tone: low ? 'warn' : '', viz: { ring: avg, tone: low ? 'warn' : 'mint' } },
-      { icon: 'zap', label: 'Energy consumed', value: fmt.n(m30.kwh), unit: 'kWh', trend: kwh, hint: `${fmt.n(m30.per100, 1)} kWh/100 km · 30 days`, viz: { spark: m14.map((x) => x.kwh), tone: 'teal' } },
-      { icon: 'coins', label: 'Charging cost', value: money(m30.cost, 0), trend: cost, hint: `${money(m30.costPerKwh)} per kWh · 30 days`, viz: { spark: m14.map((x) => x.cost), tone: 'mint' } },
-      { icon: 'gauge', label: 'Estimated range', value: fmt.n(range), unit: 'km', hint: `${fmt.n(range / Math.max(1, vs.length))} km average per vehicle`, viz: { meter: fullRange ? range / fullRange * 100 : 0 } },
-      { icon: 'leaf', label: 'CO₂ emissions saved', value: fmt.n(m30.co2, 1), unit: 't', trend: co2, hint: 'vs. diesel equivalents · 30 days', tone: 'lime', viz: { spark: co2Series, tone: 'lime' } },
-      { icon: 'plug-zap', label: 'Available stations', value: String(free.length), unit: `/ ${online.length}`, hint: `${freeConns} compatible connectors free now`, viz: { dots: online.map((st) => free.includes(st)) } },
+      { href: '#m-vehicles', vfilter: 'all', icon: 'car-front', label: 'Total vehicles', value: String(vs.length), hint: `${f.drivers.length} drivers · ${f.depots.length} depots`, viz: { seg: [['teal', c('in_use')], ['mint', c('charging') + c('waiting')], ['ok', c('available')], ['warn', c('maintenance')], ['muted', c('offline')]] } },
+      { href: '#m-vehicles', vfilter: 'in_use', icon: 'activity', label: 'Active vehicles', value: String(active), unit: `/ ${vs.length}`, hint: `${c('maintenance')} in maintenance · ${c('offline')} offline`, viz: { ring: vs.length ? active / vs.length * 100 : 0, tone: 'teal' } },
+      { href: '#m-vehicles', vfilter: 'all', icon: 'battery-medium', label: 'Average battery', value: String(Math.round(avg)), unit: '%', hint: low ? `${low} vehicle${low > 1 ? 's' : ''} below 20%` : 'All vehicles above 20%', tone: low ? 'warn' : '', viz: { ring: avg, tone: low ? 'warn' : 'mint' } },
+      { href: '#m-energy', icon: 'zap', label: 'Energy consumed', value: fmt.n(m30.kwh), unit: 'kWh', trend: kwh, hint: `${fmt.n(m30.per100, 1)} kWh/100 km · 30 days`, viz: { spark: m14.map((x) => x.kwh), tone: 'teal' } },
+      { href: '#m-finance', icon: 'coins', label: 'Charging cost', value: money(m30.cost, 0), trend: cost, hint: `${money(m30.costPerKwh)} per kWh · 30 days`, viz: { spark: m14.map((x) => x.cost), tone: 'mint' } },
+      { href: '#m-vehicles', vfilter: 'all', icon: 'gauge', label: 'Estimated range', value: fmt.n(range), unit: 'km', hint: `${fmt.n(range / Math.max(1, vs.length))} km average per vehicle`, viz: { meter: fullRange ? range / fullRange * 100 : 0 } },
+      { href: '#m-impact', icon: 'leaf', label: 'CO₂ emissions saved', value: fmt.n(m30.co2, 1), unit: 't', trend: co2, hint: 'vs. diesel equivalents · 30 days', tone: 'lime', viz: { spark: co2Series, tone: 'lime' } },
+      { href: '#m-stations', icon: 'plug-zap', label: 'Available stations', value: String(free.length), unit: `/ ${online.length}`, hint: `${freeConns} compatible connectors free now`, viz: { dots: online.map((st) => free.includes(st)) } },
     ];
   }
   function vizHTML(z, i) {
@@ -101,11 +101,11 @@
   const segHTML = (seg, t) => seg.filter((x) => x[1]).map(([tone, n]) => `<i class="${tone}" style="flex:${+n || 0}" title="${esc(n)}"></i>`).join('');
   const dotsHTML = (dots) => dots.map((on) => `<i class="${on ? 'on' : ''}"></i>`).join('');
   function kpis() {
-    return kpiData().map((k, i) => `<div class="stat-card kpi ${k.tone || ''}" style="--i:${i}">
+    return kpiData().map((k, i) => `<a class="stat-card kpi go ${k.tone || ''}" style="--i:${i}" href="${k.href}"${k.vfilter ? ` data-vfilter="${k.vfilter}"` : ''}>
       <div class="stat-top"><span class="stat-ic">${icon(k.icon)}</span><span class="stat-name">${esc(k.label)}</span></div>
       <div class="kpi-mid"><div class="stat-num"><span data-live="kpi-${i}" data-tween>${k.value}</span>${k.unit ? `<small>${esc(k.unit)}</small>` : ''}</div><div class="kpi-viz">${vizHTML(k.viz, i)}</div></div>
       <div class="stat-foot">${k.trend ? `<span class="trend ${k.trend.good === true ? 'good' : k.trend.good === false ? 'bad' : 'neutral'}">${icon(k.trend.dir === 'up' ? 'trending-up' : 'trending-down')}${esc(k.trend.text)}</span>` : ''}<span class="stat-hint" data-live="kpi-${i}-h">${esc(k.hint)}</span></div>
-    </div>`).join('');
+    </a>`).join('');
   }
   function kpiLive(vals) {
     kpiData().forEach((k, i) => {
@@ -149,9 +149,9 @@
           ${att.length ? `<a class="hl-alert" href="#m-vehicles">${icon('triangle-alert')}<b>${att.length}</b> need attention</a>` : `<span class="hl-alert ok">${icon('circle-check')}All clear</span>`}</div>
         ${flowSVG(n)}
         <div class="hl-stats">
-          <div><span>Grid → network</span><b><span data-live="hl-net" data-tween>${fmt.n(n.net)}</span> kW</b><small><span data-live="hl-sess" data-tween>${n.sessions}</span> sessions on the network</small></div>
-          <div><span>Network → your fleet</span><b><span data-live="hl-fleet" data-tween>${fmt.n(n.fleetKw)}</span> kW</b><small><span data-live="hl-fleetn">${n.fleetN}</span> charging · <span data-live="hl-free">${n.freeConns}</span> connectors free</small></div>
-          <div><span>On the road</span><b><span data-live="hl-road" data-tween>${n.road}</span> vehicles</b><small><span data-live="hl-ready">${n.ready}</span> ready at depots</small></div>
+          <a href="#m-stations"><span>Grid → network</span><b><span data-live="hl-net" data-tween>${fmt.n(n.net)}</span> kW</b><small><span data-live="hl-sess" data-tween>${n.sessions}</span> sessions on the network</small></a>
+          <a href="#m-sessions"><span>Network → your fleet</span><b><span data-live="hl-fleet" data-tween>${fmt.n(n.fleetKw)}</span> kW</b><small><span data-live="hl-fleetn">${n.fleetN}</span> charging · <span data-live="hl-free">${n.freeConns}</span> connectors free</small></a>
+          <a href="#m-tower"><span>On the road</span><b><span data-live="hl-road" data-tween>${n.road}</span> vehicles</b><small><span data-live="hl-ready">${n.ready}</span> ready at depots</small></a>
         </div>
       </section>`;
   }
@@ -221,7 +221,7 @@
       <section class="stat-grid kpi-grid">${kpis()}</section>
       ${VF.mgr.intelStrip ? VF.mgr.intelStrip() : ''}
       <div class="dash">
-        ${C.card({ cls: 'span-8 flush', title: 'Vehicle overview', sub: 'Live status of your fleet', action: `<a class="btn small ghost" href="#m-vehicles">View all ${icon('arrow-right')}</a>` }, `<div class="vlist">${list.map(vehicleRow).join('')}</div>`)}
+        ${C.card({ cls: 'span-8 flush', href: '#m-vehicles', title: 'Vehicle overview', sub: 'Live status of your fleet', action: `<a class="btn small ghost" href="#m-vehicles">View all ${icon('arrow-right')}</a>` }, `<div class="vlist">${list.map(vehicleRow).join('')}</div>`)}
         <div class="span-4 stack">
           ${C.card({ title: 'Quick actions' }, `<div class="quick-grid">
             <button class="qa" data-act="m-add-vehicle">${icon('plus')}<span>Add vehicle</span></button>
@@ -230,16 +230,16 @@
             <a class="qa" href="#m-trips">${icon('route')}<span>Plan a journey</span></a>
             <a class="qa" href="#m-reports">${icon('file-text')}<span>View reports</span></a>
           </div>`)}
-          ${C.card({ title: 'Needs attention', action: att.length ? `<span class="badge warn">${att.length}</span>` : '' }, att.length ? `<ul class="att-list" role="none">${att.slice(0, 5).map(([ic, tone, title, sub, id]) => `<li data-act="m-open-vehicle" data-id="${id}" role="button" tabindex="0"><span class="att-ic ${tone}">${icon(ic)}</span><div><strong>${esc(title)}</strong><span class="small muted">${esc(sub)}</span></div>${icon('chevron-right', 'chev')}</li>`).join('')}</ul>` : C.empty({ icon: 'circle-check', title: 'All clear', text: 'No vehicle needs attention right now.' }))}
+          ${C.card({ href: '#m-vehicles', title: 'Needs attention', action: att.length ? `<span class="badge warn">${att.length}</span>` : '' }, att.length ? `<ul class="att-list" role="none">${att.slice(0, 5).map(([ic, tone, title, sub, id]) => `<li data-act="m-open-vehicle" data-id="${id}" role="button" tabindex="0"><span class="att-ic ${tone}">${icon(ic)}</span><div><strong>${esc(title)}</strong><span class="small muted">${esc(sub)}</span></div>${icon('chevron-right', 'chev')}</li>`).join('')}</ul>` : C.empty({ icon: 'circle-check', title: 'All clear', text: 'No vehicle needs attention right now.' }))}
         </div>
-        ${C.card({ cls: 'span-8', title: 'Vehicle locations', sub: 'Live positions and nearby charging stations', action: mapLegend() }, `<div class="map-wrap">${VF.mgr.fleetMap('m-dash-map')}</div>${VF.mgr.mapNote()}`)}
-        ${C.card({ cls: 'span-4 wide-md', title: 'Fleet status' }, `<div data-live="m-donut">${statusDonut()}</div>`)}
-        ${C.card({ cls: 'span-12 flush', title: 'Charging activity', sub: 'Recent sessions across the public network', action: `<a class="btn small ghost" href="#m-sessions">All sessions ${icon('arrow-right')}</a>` }, C.table(sessionCols(true), chargingRows(6), { empty: { icon: 'plug-zap', title: 'No charging yet today' } }))}
-        ${C.card({ cls: 'span-8', title: 'Energy consumption', sub: 'kWh per day, completed days', action: C.seg([[7, '7 days'], [30, '30 days']], ui.dashDays, 'm-dash-days') }, '<div class="chart-slot" data-chart="m-energy"></div>')}
-        ${C.card({ cls: 'span-4 lime-card', title: 'CO₂ emissions saved', sub: 'Compared with diesel equivalents' }, `<div class="big-metric lime"><span>${fmt.n(VF.fleetMetrics(ui.dashDays).co2, 1)}</span><small>tonnes in ${ui.dashDays} days</small></div><div class="chart-slot" data-chart="m-co2"></div>`)}
-        ${C.card({ cls: 'span-4', title: 'Charging costs', sub: `${esc(VF.state.settings.currency)} per day` }, '<div class="chart-slot" data-chart="m-cost"></div>')}
-        ${C.card({ cls: 'span-4', title: 'Vehicle utilisation', sub: 'Share of working hours in use, 30 days' }, C.hbars(utilisation().slice(0, 6), { tone: 'mint' }))}
-        ${C.card({ cls: 'span-4', title: 'Battery performance', sub: 'State of health, lowest first' }, C.hbars(VF.simVehicles().sort((a, b) => a.soh - b.soh).slice(0, 6).map((v) => ({ label: v.name, value: v.soh, text: v.soh + '%', tone: v.soh < 90 ? 'warn' : 'teal' }))) + `<p class="small muted">Fleet average ${fmt.n(sum(VF.simVehicles(), (v) => v.soh) / Math.max(1, VF.simVehicles().length), 1)}% · batteries below 80% need a dealer check.</p>`)}
+        ${C.card({ cls: 'span-8', href: '#m-tower', title: 'Vehicle locations', sub: 'Live positions and nearby charging stations', action: mapLegend() }, `<div class="map-wrap">${VF.mgr.fleetMap('m-dash-map')}</div>${VF.mgr.mapNote()}`)}
+        ${C.card({ cls: 'span-4 wide-md', href: '#m-vehicles', title: 'Fleet status' }, `<div data-live="m-donut">${statusDonut()}</div>`)}
+        ${C.card({ cls: 'span-12 flush', href: '#m-sessions', title: 'Charging activity', sub: 'Recent sessions across the public network', action: `<a class="btn small ghost" href="#m-sessions">All sessions ${icon('arrow-right')}</a>` }, C.table(sessionCols(true), chargingRows(6), { empty: { icon: 'plug-zap', title: 'No charging yet today' } }))}
+        ${C.card({ cls: 'span-8', href: '#m-energy', title: 'Energy consumption', sub: 'kWh per day, completed days', action: C.seg([[7, '7 days'], [30, '30 days']], ui.dashDays, 'm-dash-days') }, '<div class="chart-slot" data-chart="m-energy"></div>')}
+        ${C.card({ cls: 'span-4 lime-card', href: '#m-impact', title: 'CO₂ emissions saved', sub: 'Compared with diesel equivalents' }, `<div class="big-metric lime"><span>${fmt.n(VF.fleetMetrics(ui.dashDays).co2, 1)}</span><small>tonnes in ${ui.dashDays} days</small></div><div class="chart-slot" data-chart="m-co2"></div>`)}
+        ${C.card({ cls: 'span-4', href: '#m-finance', title: 'Charging costs', sub: `${esc(VF.state.settings.currency)} per day` }, '<div class="chart-slot" data-chart="m-cost"></div>')}
+        ${C.card({ cls: 'span-4', href: '#m-fleet', title: 'Vehicle utilisation', sub: 'Share of working hours in use, 30 days' }, C.hbars(utilisation().slice(0, 6), { tone: 'mint' }))}
+        ${C.card({ cls: 'span-4', href: '#m-health', title: 'Battery performance', sub: 'State of health, lowest first' }, C.hbars(VF.simVehicles().sort((a, b) => a.soh - b.soh).slice(0, 6).map((v) => ({ label: v.name, value: v.soh, text: v.soh + '%', tone: v.soh < 90 ? 'warn' : 'teal' }))) + `<p class="small muted">Fleet average ${fmt.n(sum(VF.simVehicles(), (v) => v.soh) / Math.max(1, VF.simVehicles().length), 1)}% · batteries below 80% need a dealer check.</p>`)}
       </div>`;
   }
   function statusDonut() {
@@ -546,6 +546,11 @@
     });
   }
   VF.mgr.openStartSession = openStartSession;
+  // Dashboard tiles that lead to My Vehicles open it with the matching filter (e.g. Active vehicles -> In use).
+  document.addEventListener('click', (e) => {
+    const a = e.target.closest && e.target.closest('a[data-vfilter]'); if (!a) return;
+    if (VFILTERS.some(([k]) => k === a.dataset.vfilter)) { ui.vfilter = a.dataset.vfilter; ui.vq = ''; }
+  }, true);
   Object.assign(VF.ACT, {
     'm-open-vehicle': (el) => { ui.vehicle = el.dataset.id; ui.vtab = 'overview'; if (VF.route() === 'm-vehicle') VF.rerender(); else location.hash = 'm-vehicle'; },
     'm-add-vehicle': openAddVehicle,

@@ -34,7 +34,7 @@ const TESTS = {
   'a11y': { ...e2e('a11y'), empty: true },
   'a11y-r3': { ...e2e('a11y-r3'), ...has(/no violations on the round-3 screens/), mustNot: [/unexpected screen/] },
   // round 3-4
-  'robust': e2e('robust'), 'ocpp-recover': e2e('ocpp-recover'), 'map-privacy': e2e('map-privacy'),
+  'robust': e2e('robust'), 'ocpp-recover': e2e('ocpp-recover'), 'map-privacy': e2e('map-privacy'), 'dashboard-links': e2e('dashboard-links'),
   'heads': e2e('heads'), 'r3-app': e2e('r3-app'), 'r4-app': e2e('r4-app'), 'signout': e2e('signout'),
   'patch': { cmd: 'node', args: [path.join(T, 'unit', 'patch.js')] },
   'fn-smartcar-r2': mts('smartcar-r2'), 'fn-smartcar-r3': mts('smartcar-r3'), 'fn-ocpp': mts('ocpp'),

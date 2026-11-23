@@ -33,7 +33,10 @@
   // ---------------------------------------------------------------- cards
   C.card = (opts, body) => {
     const o = typeof opts === 'string' ? { title: opts } : opts;
-    return `<section class="card ${o.cls || ''}"${o.id ? ` id="${o.id}"` : ''}>${o.title ? `<header class="card-head"><div class="card-titles"><h3>${o.title}</h3>${o.sub ? `<p class="card-sub">${o.sub}</p>` : ''}</div>${o.action ? `<div class="card-tools">${o.action}</div>` : ''}</header>` : ''}${body}</section>`;
+    // o.href (an in-app '#page'): the title becomes a link and a click anywhere on the card that isn't a control opens
+    // that page (app.js), so a dashboard card leads to where its numbers come from.
+    const href = typeof o.href === 'string' && /^#[a-z0-9-]+$/.test(o.href) ? o.href : '';
+    return `<section class="card ${o.cls || ''}${href ? ' card-go' : ''}"${o.id ? ` id="${o.id}"` : ''}${href ? ` data-href="${href}"` : ''}>${o.title ? `<header class="card-head"><div class="card-titles"><h3>${href ? `<a class="card-link" href="${href}">${o.title}<span class="card-link-go" aria-hidden="true">${VF.icon('arrow-right')}</span></a>` : o.title}</h3>${o.sub ? `<p class="card-sub">${o.sub}</p>` : ''}</div>${o.action ? `<div class="card-tools">${o.action}</div>` : ''}</header>` : ''}${body}</section>`;
   };
   // Metric card: icon, big number, label, and a comparison when one is meaningful.
   C.stat = (o) => {
