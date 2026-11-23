@@ -107,6 +107,32 @@ const ok = (c, m) => console.log((c ? 'PASS ' : 'FAIL ') + m);
   await adHome(); const kv = await p.evaluate(() => document.querySelector('a.kpi.go .value') && document.querySelector('a.kpi.go .value').textContent);
   await p.waitForTimeout(2500);
   ok(await p.evaluate(() => document.querySelectorAll('a.kpi.go').length === 7), 'admin tiles stay links after the live refresh (' + kv + ')');
+
+  // ================================================================ driver: Home
+  await as('driver');
+  const dHome = async () => { await p.evaluate(() => { location.hash = 'driver-home'; }); await p.waitForTimeout(800); };
+  await dHome();
+  const links = await p.evaluate(() => [...document.querySelectorAll('#view .card-go a.card-link, #view a.db-status')].map((a) => ({ text: a.textContent.trim(), href: a.getAttribute('href') })));
+  ok(links.length >= 5, `driver home has linked cards: ${links.map((l) => l.text.slice(0, 24) + ' → ' + l.href).join(', ')}`);
+  for (const [i, l] of links.entries()) {
+    await dHome(); await p.locator('#view .card-go a.card-link, #view a.db-status').nth(i).click(); await p.waitForTimeout(600);
+    ok((await route()) === l.href.slice(1), `driver “${l.text.slice(0, 30)}” opens ${l.href.slice(1)} → ${await route()}`);
+  }
+  const want = { 'Vehicle health': 'driver-vehicle', 'Chargers on your route': 'driver-charge', 'Range today': 'driver-vehicle' };
+  for (const [title, page] of Object.entries(want)) ok(links.some((l) => l.text.startsWith(title) && l.href === '#' + page), `“${title}” links to ${page}`);
+  await dHome(); await clickIn(p.locator('#view section.d-battery'), (r) => ({ x: r.w / 2, y: r.h - 16 })); await p.waitForTimeout(600);
+  ok((await route()) === 'driver-vehicle', 'tapping the battery card opens My vehicle');
+  await dHome(); await clickIn(p.locator('section.card-go', { has: p.locator('a.card-link', { hasText: 'Vehicle health' }) }), (r) => ({ x: r.w / 2, y: r.h - 16 })); await p.waitForTimeout(600);
+  ok((await route()) === 'driver-vehicle', 'tapping inside the Vehicle health card opens My vehicle');
+  await dHome(); const seeAll = p.locator('[data-act="d-go"][data-tab="driver-charge"]').first(); await seeAll.click(); await p.waitForTimeout(600);
+  ok((await route()) === 'driver-charge', 'buttons inside cards keep working (“See all”)');
+  await dHome(); await p.evaluate(() => { const w = document.querySelector('#d-mapwrap'); const bg = w && (w.querySelector('svg, .lmap') || w); if (bg) bg.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })); }); await p.waitForTimeout(500);
+  ok((await route()) === 'driver-home', 'tapping the map stays on Home (' + await route() + ')');
+  await p.evaluate(() => { location.hash = 'driver-charge'; }); await p.waitForTimeout(800);
+  ok(await p.evaluate(() => ![...document.querySelectorAll('#view [data-href]')].some((x) => x.dataset.href === '#driver-charge')), 'no card links to the page it is already on');
+  await p.setViewportSize({ width: 390, height: 844 }); await dHome();
+  await clickIn(p.locator('section.card-go', { has: p.locator('a.card-link', { hasText: 'Chargers on your route' }) }), (r) => ({ x: r.w - 12, y: 14 })); await p.waitForTimeout(600);
+  ok((await route()) === 'driver-charge', 'on a phone, tapping a card opens its page');
   ok(errs.length === 0, 'no page errors' + (errs.length ? ': ' + errs.slice(0, 3).join(' | ') : ''));
   await b.close();
 })();

@@ -1896,6 +1896,8 @@ a.stat-card { display: flex; }
 .card-link-go svg { width: 14px; height: 14px; }
 .card-go:hover .card-link-go, .card-link:focus-visible .card-link-go { opacity: 1; transform: none; }
 .card-link:hover { text-decoration: underline; text-underline-offset: 3px; }
+.db-status.card-link { color: rgba(204, 251, 241, .72); }
+.db-status.card-link:hover { color: #fff; }
 .hl-stats > a { color: inherit; text-decoration: none; transition: border-color .15s ease, background .15s ease; }
 .hl-stats > a:hover { border-color: rgba(153, 246, 228, .4); background: rgba(255, 255, 255, .09); }
 @media (hover: none) { .card-link-go { opacity: .7; transform: none; } }

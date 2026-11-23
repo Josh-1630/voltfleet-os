@@ -82,7 +82,10 @@
   }
 
   // ---------------------------------------------------------------- shared cards
-  const card = (cls, title, action, body) => `<section class="card ${cls}">${title ? `<div class="card-head"><h3>${title}</h3>${action || ''}</div>` : ''}${body}</section>`;
+  // href (optional, an in-app '#page'): the title links there and a click on the card outside its controls opens it.
+  // Linked card; no link when it would point at the page already shown (the same cards appear on Charge and Bookings).
+  const goCard = (href, cls, title, action, body) => card(cls, title, action, body, href && href.slice(1) !== VF.route() ? href : null);
+  const card = (cls, title, action, body, href) => { const h = href && VF.c.goHref(href); return `<section class="card ${cls}${h ? ' card-go' : ''}"${h ? VF.c.goPanel(h) : ''}>${title ? `<div class="card-head"><h3>${h ? VF.c.goTitle(h, title) : title}</h3>${action || ''}</div>` : ''}${body}</section>`; };
   const stat = (label, value, live) => `<div class="stat"><span class="stat-label">${label}</span><span class="stat-value"${live ? ` data-live="${live}" data-tween` : ''}>${value}</span></div>`;
   const mapsLink = (st) => `https://www.google.com/maps/search/?api=1&query=${VF.PLACES[st.node].lat},${VF.PLACES[st.node].lon}`;
 
@@ -91,7 +94,7 @@
     const d = VF.driver(v.driverId); const b = VF.activeBooking(d.id); const reserve = VF.state.settings.reserve;
     if (b && b.status === 'charging') {
       const st = VF.station(b.stationId); const c = VF.connector(b.connectorId);
-      return card(`${span} charge-card is-charging`, 'Charging now', VF.pill('charge', 'Live'), `
+      return goCard('#driver-bookings', `${span} charge-card is-charging`, 'Charging now', VF.pill('charge', 'Live'), `
         <div class="charge-place"><strong>${esc(st.name)}</strong><span class="muted small">Connector ${esc(c.label)} · ${esc(c.type)} ${c.kw} kW</span></div>
         <div class="chg-flow" aria-hidden="true"><span class="cf-node">${icon('plug')}</span><span class="cf-line"><i></i><i></i><i></i><i></i><i></i></span><span class="cf-node car">${icon('car')}</span></div>
         <div class="progress lg"><i class="charge" data-live="chgw" style="width:${clamp(v.soc, 0, 100)}%"></i><b style="left:${clamp(+b.targetSoc || 0, 0, 100)}%" title="Target ${esc(b.targetSoc)}%"></b></div>
@@ -101,15 +104,15 @@
     if (b) {
       const st = VF.station(b.stationId); const c = VF.connector(b.connectorId); const op = VF.operator(b.operatorId);
       const wait = c.status === 'Charging' && c.session && c.session.bookingId !== b.id;
-      return card(`${span} charge-card is-booked`, 'Your charging slot', `<span class="code-chip">${esc(b.code)}</span>`, `
+      return goCard('#driver-bookings', `${span} charge-card is-booked`, 'Your charging slot', `<span class="code-chip">${esc(b.code)}</span>`, `
         <div class="charge-place"><strong>${esc(st.name)}</strong><span class="muted small">${esc(op.name)} · ${esc(c.label)} · ${esc(c.type)} ${c.kw} kW</span></div>
         <div class="stats-3">${stat('Slot starts', VF.fmtTime(b.start))}${stat('You arrive', VF.fmtTime(b.eta), 'beta')}${stat('Est. cost', fmt.money(b.estCost, 0))}</div>
         <div class="note ${wait ? 'warn' : 'good'}">${icon(wait ? 'clock' : 'check')}<span>${wait ? 'A walk-in is finishing on your connector. You keep first place.' : `Held for you until ${VF.fmtTime(b.start + op.pricing.graceMin * MIN)}. No queue.`}</span></div>
         <div class="card-actions"><a class="btn" href="${mapsLink(st)}" target="_blank" rel="noopener">${icon('pin')}Directions</a><button class="btn ghost danger" data-act="d-cancel" data-id="${b.id}">Cancel</button></div>`);
     }
-    if (v.status === 'stranded') return card(`${span} charge-card is-low`, 'Battery empty', '', `<p class="muted">Call roadside assistance. They get your booking history, but not your location unless you share it.</p>`);
+    if (v.status === 'stranded') return goCard('#driver-charge', `${span} charge-card is-low`, 'Battery empty', '', `<p class="muted">Call roadside assistance. They get your booking history, but not your location unless you share it.</p>`);
     if (t && t.arriveSoc < reserve) {
-      return card(`${span} charge-card is-low beam`, 'Charge needed', VF.pill('bad', 'Action'), `
+      return goCard('#driver-charge', `${span} charge-card is-low beam`, 'Charge needed', VF.pill('bad', 'Action'), `
         <p>At this pace you'd reach <strong>${esc(t.dest)}</strong> with <strong data-live="arrsoc2">${Math.round(t.arriveSoc)}%</strong>, below your ${reserve}% reserve.</p>
         <button class="btn primary big glow" data-act="d-auto">${icon('bolt')}Book a charger on my route</button>
         <p class="faint small">Checks live availability of every connector that fits your car and holds a slot for your arrival.</p>`);
@@ -143,9 +146,9 @@
   const ringTone = (soc, v) => (v.status === 'charging' ? 'chg' : soc < 15 ? 'lo' : soc < 30 ? 'mid' : 'ok');
   function batteryCard(v, m, span) {
     const charging = v.status === 'charging';
-    return `<section class="${span} d-battery beam${charging ? ' is-charging' : ''}">
+    return `<section class="${span} d-battery beam card-go${charging ? ' is-charging' : ''}"${VF.c.goPanel('#driver-vehicle')}>
       <div class="hl-grid" aria-hidden="true"></div>
-      <div class="db-head"><span class="hl-live"><i></i>Live · ${esc(m.oem)}</span><span class="db-status">${esc(statusLine(v))}</span></div>
+      <div class="db-head"><span class="hl-live"><i></i>Live · ${esc(m.oem)}</span><a class="db-status card-link" href="#driver-vehicle">${esc(statusLine(v))}<span class="card-link-go" aria-hidden="true">${icon('arrow-right')}</span></a></div>
       <div class="db-ring">
         <svg viewBox="0 0 200 200" aria-hidden="true"><defs><linearGradient id="db-g" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#2DD4BF"/><stop offset="1" stop-color="#A3E635"/></linearGradient></defs>
           <circle class="db-orbit" cx="100" cy="100" r="92"/>
@@ -158,7 +161,7 @@
   }
   function tripCard(v, m, t, span) {
     if (!t) return whereTo(v, span);
-    return card(`${span} trip-card`, 'Current trip', `<button class="link-btn" data-act="d-go" data-tab="driver-charge">Chargers on route</button>`, `
+    return goCard('#driver-charge', `${span} trip-card`, 'Current trip', `<button class="link-btn" data-act="d-go" data-tab="driver-charge">Chargers on route</button>`, `
       <div class="route-line-ui"><div class="end"><i class="dot"></i><strong>${esc(t.origin)}</strong></div><div class="progress road"><i data-live="tripw" style="width:${(t.progress * 100).toFixed(1)}%"><span class="car-dot">${icon('car')}</span></i></div><div class="end r"><i class="dot dest"></i><strong>${esc(t.dest)}</strong></div></div>
       <div class="stats-3">${stat('Distance left', fmt.km(t.left), 'left')}${stat('Arrival', VF.fmtTime(t.eta), 'eta')}${stat('Battery on arrival', Math.round(t.arriveSoc) + '%', 'arrsoc')}</div>
       <div class="card-foot">${t.b ? `Includes your charging stop at ${esc(VF.station(t.b.stationId).name)}` : 'No charging stop planned'} · arrival updates live</div>`);
@@ -169,7 +172,7 @@
       <p class="faint small">Your destination stays on this device and is used only to plan range and charging.</p>`);
   }
   function mapCard(v, m, span, title) {
-    return card(`${span} map-card`, title || 'Route and chargers', mapLegend(), `<div class="map-wrap" id="d-mapwrap">${mapHTML(v, m, 'd-map')}</div>`);
+    return goCard('#driver-charge', `${span} map-card`, title || 'Route and chargers', mapLegend(), `<div class="map-wrap" id="d-mapwrap">${mapHTML(v, m, 'd-map')}</div>`);
   }
   function healthCard(v, m, span) {
     const items = [
@@ -178,7 +181,7 @@
       ['car', 'Odometer', `<span data-live="odo">${fmt.n(v.odo)} km</span>`],
       ['warn', 'Lowest tyre', has(m, 'tyres') ? `${Math.min(...v.tyres)} psi` : '<span class="faint">n/a</span>'],
     ];
-    return card(`${span}`, 'Vehicle health', `<button class="link-btn" data-act="d-go" data-tab="driver-vehicle">Details</button>`, `${VF.c && VF.c.vehicleImg ? `<div class="d-health-photo">${VF.c.vehicleImg(v.model, 'cover')}</div>` : ''}<div class="metric-grid">${items.map(([ic, l, val]) => `<div class="metric">${icon(ic)}<span class="stat-label">${l}</span><span class="stat-value sm">${val}</span></div>`).join('')}</div>`);
+    return goCard('#driver-vehicle', `${span}`, 'Vehicle health', `<button class="link-btn" data-act="d-go" data-tab="driver-vehicle">Details</button>`, `${VF.c && VF.c.vehicleImg ? `<div class="d-health-photo">${VF.c.vehicleImg(v.model, 'cover')}</div>` : ''}<div class="metric-grid">${items.map(([ic, l, val]) => `<div class="metric">${icon(ic)}<span class="stat-label">${l}</span><span class="stat-value sm">${val}</span></div>`).join('')}</div>`);
   }
   function updatesCard(d, span) {
     const list = VF.state.notices.filter((n) => n.driverId === d.id).slice(0, 4);
@@ -195,7 +198,7 @@
       ${tripCard(v, m, t, 'span-4')}
       ${chargeCard(v, m, t, 'span-4')}
       ${mapCard(v, m, 'span-8')}
-      ${card('span-4', 'Chargers on your route', `<button class="link-btn" data-act="d-go" data-tab="driver-charge">See all</button>`, list.length ? `<ul class="opt-list">${list.slice(0, 4).map((o) => optionRow(o, canBook, true)).join('')}</ul>` : '<p class="muted small">No compatible charger has a free slot on this route in the next 4 hours.</p>')}
+      ${goCard('#driver-charge', 'span-4', 'Chargers on your route', `<button class="link-btn" data-act="d-go" data-tab="driver-charge">See all</button>`, list.length ? `<ul class="opt-list">${list.slice(0, 4).map((o) => optionRow(o, canBook, true)).join('')}</ul>` : '<p class="muted small">No compatible charger has a free slot on this route in the next 4 hours.</p>')}
       ${healthCard(v, m, 'span-6')}
       ${updatesCard(d, 'span-6')}
     </div>`;
