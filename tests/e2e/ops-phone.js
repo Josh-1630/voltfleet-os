@@ -26,8 +26,10 @@ const ok = (c, m) => console.log((c ? 'PASS ' : 'FAIL ') + m);
   const o = await p.evaluate(() => ({ down: !VF.state.fleet.ops.grid.dp2.up, ex: VF.ops.exceptions().some((x) => /outage/i.test(x.title)), ob: VF.state.fleet.ops.outbox.filter((m) => m.type === 'outage').length, plan: VF.intel.plan().depots.find((d) => d.depotId === 'dp2').slots.filter((s) => s.down).length }));
   ok(o.down && o.ex && o.ob >= 1 && o.plan > 0, `outage: depot down, exception, ${o.ob} messages, ${o.plan} plan hours on backup`);
   await p.screenshot({ path: `${out}/v3-tower-outage.png` });
-  await p.click('[data-act="o-restore"]'); await p.waitForTimeout(800);
-  ok(await p.evaluate(() => VF.state.fleet.ops.grid.dp2.up), 'restore power');
+  // Wait for the result instead of a fixed delay (CI machines are slower; the tower page also re-draws live).
+  for (let i = 0; i < 3; i++) { try { await p.click('[data-act="o-restore"]', { timeout: 3000 }); break; } catch (e) { await p.waitForTimeout(300); } }
+  const restored = await p.waitForFunction(() => VF.state.fleet.ops.grid.dp2.up, null, { timeout: 5000 }).then(() => true, () => false);
+  ok(restored, 'restore power');
   // Hourly pricing
   await go(p, 'm-smart'); await p.click('[data-act="i-tmode"][data-k="hourly"]'); await p.waitForTimeout(800);
   const hp = await p.evaluate(() => { const s = VF.intel.plan().depots[0].slots.map((x) => x.price); return { n: new Set(s).size, pct: VF.intel.plan().savingsPct }; });
